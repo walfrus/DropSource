@@ -28,9 +28,11 @@ const TTL = 120 * 1000;
 
 // map raw services -> public services with your pricing
 function toPublicService(s) {
-  // panel typically returns: { service, name, rate, min, max, category, dripfeed, refill, cancel, type, ... }
-  const baseRatePer1k = Number(s.rate || s['rate(1k)'] || s.price || 0); // try common keys
-  const yourRatePer1k = +(baseRatePer1k * MULT + FLAT * 1000).toFixed(2);
+  const baseRatePer1k = parseFloat(s.rate ?? s['rate(1k)'] ?? s.price ?? 0);
+
+  // Correct formula:
+  // final price per 1k = (panel per-1k) * MULTIPLIER + FLAT_FEE
+  const yourRatePer1k = Number((baseRatePer1k * MULT + FLAT).toFixed(2));
 
   return {
     id: s.service ?? s.id,
@@ -41,10 +43,8 @@ function toPublicService(s) {
     dripfeed: Boolean(s.dripfeed) || s['dripfeed'] === 'true',
     refill: Boolean(s.refill) || s['refill'] === 'true',
     cancel: Boolean(s.cancel) || s['cancel'] === 'true',
-    // show both rates for transparency in your admin if you want
     panel_rate_per_1k: baseRatePer1k,
     price_per_1k: yourRatePer1k,
-    // optional descriptions the panel may provide:
     details: s.description || s.note || ''
   };
 }
