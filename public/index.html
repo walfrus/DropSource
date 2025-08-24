@@ -60,28 +60,45 @@ async function fetchServices() {
   }
 }
 
-function renderServices(services) {
-  elGrid.innerHTML = services.map(s => `
-    <div class="card">
-      <h3>
-        <span class="brand">[DropSource]</span> — ${escapeHtml(s.name ?? s.title ?? "Service")}
-      </h3>
-      <div class="muted">${escapeHtml(s.category)}</div>
-      <div class="row" style="margin:8px 0 10px">
-        <span class="pill">Min ${s.min}</span>
-        <span class="pill">Max ${s.max}</span>
-        ${s.dripfeed ? '<span class="pill">Dripfeed</span>' : ''}
-        ${s.refill ? '<span class="pill">Refill</span>' : ''}
-      </div>
-      <div class="row" style="justify-content:space-between">
-        <div><strong>$${s.price_per_1k.toFixed(2)}</strong> <span class="muted">/ 1k</span></div>
-        <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
-      </div>
-    </div>
-  `).join('');
+// strip any "DropSource" (with or without brackets) and a leading dash from incoming names
+function normalizeName(x) {
+  const raw = (x ?? '').toString();
+  return raw
+    .replace(/\[?\s*DropSource\s*\]?/gi, '')  // remove "DropSource" or "[DropSource]"
+    .replace(/^\s*[-–—]\s*/, '')              // remove leading dash that might be left
+    .trim() || 'Service';
 }
 
-function escapeHtml(x){return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''}
+function renderServices(services) {
+  elGrid.innerHTML = services.map(s => {
+    const displayName = escapeHtml(normalizeName(s.name ?? s.title ?? 'Service'));
+    const price = (typeof s.price_per_1k === 'number' && isFinite(s.price_per_1k))
+      ? `$${s.price_per_1k.toFixed(2)}`
+      : '-';
+    return `
+      <div class="card">
+        <h3>
+          <span class="brand">[DropSource]</span> — ${displayName}
+        </h3>
+        <div class="muted">${escapeHtml(s.category || '')}</div>
+        <div class="row" style="margin:8px 0 10px">
+          <span class="pill">Min ${s.min}</span>
+          <span class="pill">Max ${s.max}</span>
+          ${s.dripfeed ? '<span class="pill">Dripfeed</span>' : ''}
+          ${s.refill ? '<span class="pill">Refill</span>' : ''}
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <div><strong>${price}</strong> <span class="muted">/ 1k</span></div>
+          <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(x){
+  return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''
+}
 
 async function placeOrder(serviceId, link, quantity, runs, interval) {
   const res = await fetch('/api/order', {
@@ -100,14 +117,13 @@ function openOrder(svc){
     if(r.error) alert('Error: '+r.error);
     else{
       alert('Order placed! ID: '+r.order);
-      // optional: redirect to a “My Orders” page you build later
     }
   }).catch(e=>alert('Network issue: '+e.message));
 }
 
-elQ.addEventListener('input', () => fetchServices());
-elCat.addEventListener('change', () => fetchServices());
-elReload.addEventListener('click', () => fetchServices());
+elQ.addEventListener('input', fetchServices);
+elCat.addEventListener('change', fetchServices);
+elReload.addEventListener('click', fetchServices);
 fetchServices();
 </script>
 </body>
