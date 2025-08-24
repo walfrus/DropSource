@@ -5,12 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DropSource — SMM</title>
   <style>
-    :root { --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3; --brand:#59a0ff; }
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui, -apple-system, Segoe UI, Roboto;}
-    header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #26282d;}
+    :root{
+      --bg:#0b0b0f;
+      --card:#15161a;
+      --txt:#e8ecf1;
+      --muted:#a6acb3;
+      --brand:#59a0ff;     /* DropSource blue for the tag/logo */
+      --accent:#8b5cf6;    /* price purple */
+      --accent-2:#a78bfa;
+      --chip:#1b1d23;
+      --chip-active:#2a1e3a;
+      --chip-border:#2b2f38;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
+
+    header{
+      padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;
+      border-bottom:1px solid #26282d
+    }
     .container{max-width:1100px;margin:0 auto;padding:16px}
-    input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
+
+    input,select,button{
+      background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px
+    }
     button{cursor:pointer}
+
+    /* CATEGORY CHIPS BAR */
+    .catsbar{
+      display:flex; gap:8px; align-items:center; overflow:auto; padding:8px 2px 0; scrollbar-width:none
+    }
+    .catsbar::-webkit-scrollbar{display:none}
+    .chip{
+      display:inline-flex; align-items:center; gap:8px;
+      background:var(--chip); border:1px solid var(--chip-border);
+      color:var(--txt); padding:8px 12px; border-radius:999px; white-space:nowrap; cursor:pointer;
+      transition:.15s ease transform, .15s ease background, .15s ease color, .15s ease border-color
+    }
+    .chip:hover{ transform:translateY(-1px) }
+    .chip .ico{font-size:16px}
+    .chip.active{
+      background:linear-gradient(135deg, #221831, var(--chip-active));
+      border-color:#3b3052;
+      box-shadow:0 0 0 1px rgba(167,139,250,.15) inset;
+    }
+
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
     .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
     .card h3{margin:0 0 6px 0;font-size:16px}
@@ -19,6 +58,14 @@
     .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
     .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
     .brand{color:var(--brand)}
+
+    /* price = purple vibe */
+    .price strong{
+      font-weight:700;
+      color:var(--accent);
+      text-shadow:0 0 10px rgba(139,92,246,.15);
+    }
+    .price .per{color:var(--muted)}
   </style>
 </head>
 <body>
@@ -26,47 +73,116 @@
     <div><strong class="brand">DropSource</strong> · Boosts</div>
     <div class="row">
       <input id="q" placeholder="Search services…" />
-      <select id="cat"><option value="">All categories</option></select>
+      <!-- keeping the select as a fallback; chips will do the filtering -->
+      <select id="cat" style="display:none"><option value="">All categories</option></select>
       <button id="reload">Reload</button>
     </div>
   </header>
 
   <div class="container">
-    <div id="services" class="grid"></div>
+    <!-- icon chips appear here -->
+    <div id="catsbar" class="catsbar" aria-label="Categories"></div>
+
+    <div id="services" class="grid" style="margin-top:12px"></div>
   </div>
 
   <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
 
 <script>
 const elQ = document.getElementById('q');
-const elCat = document.getElementById('cat');
+const elCat = document.getElementById('cat'); // hidden fallback
+const elCatsBar = document.getElementById('catsbar');
 const elGrid = document.getElementById('services');
 const elReload = document.getElementById('reload');
 
+let ALL_SERVICES = [];
+let ACTIVE_CAT = ''; // empty = all
+
+// simple icon map by keyword
+function catIcon(name=''){
+  const n = name.toLowerCase();
+  if (n.includes('instagram')) return '📸';
+  if (n.includes('tiktok'))    return '🎵';
+  if (n.includes('youtube'))   return '▶️';
+  if (n.includes('facebook'))  return '📘';
+  if (n.includes('telegram'))  return '✈️';
+  if (n.includes('twitter') || n.includes('x ' ) || n === 'x') return '🐦';
+  if (n.includes('spotify'))   return '🎧';
+  if (n.includes('threads'))   return '🧵';
+  if (n.includes('reddit'))    return '👽';
+  if (n.includes('linkedin'))  return '💼';
+  if (n.includes('soundcloud'))return '☁️';
+  if (n.includes('special'))   return '⭐';
+  return '🧩';
+}
+
+// remove “DropSource” duplicates from incoming names
+function normalizeName(x) {
+  const raw = (x ?? '').toString();
+  return raw
+    .replace(/\[?\s*DropSource\s*\]?/gi, '')
+    .replace(/^\s*[-–—]\s*/, '')
+    .trim() || 'Service';
+}
+
 async function fetchServices() {
-  const q = encodeURIComponent(elQ.value || '');
-  const cat = encodeURIComponent(elCat.value || '');
-  const url = `/api/services?${q ? 'q='+q+'&' : ''}${cat ? 'category='+cat : ''}`;
+  // call API unfiltered, filter on client (so chips can swap fast)
+  const url = `/api/services`;
   const res = await fetch(url);
   const data = await res.json();
-  renderServices(data);
-  // populate categories once
+  ALL_SERVICES = data;
+  buildCategories(data);
+  renderServices(filterServices());
+}
+
+// build icon chips from categories
+function buildCategories(data){
+  const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
+  // fallback select (hidden) still gets values in case you want it later
   if (!elCat.dataset.filled) {
-    const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
     for (const c of cats) {
       const opt = document.createElement('option'); opt.value = c; opt.textContent = c; elCat.appendChild(opt);
     }
     elCat.dataset.filled = '1';
   }
+
+  // chips
+  elCatsBar.innerHTML = '';
+  const allChip = chipNode('All products', '✨', '');
+  elCatsBar.appendChild(allChip);
+  cats.forEach(c=>{
+    elCatsBar.appendChild(chipNode(c, catIcon(c), c));
+  });
+  updateActiveChip();
 }
 
-// strip any "DropSource" (with or without brackets) and a leading dash from incoming names
-function normalizeName(x) {
-  const raw = (x ?? '').toString();
-  return raw
-    .replace(/\[?\s*DropSource\s*\]?/gi, '')  // remove "DropSource" or "[DropSource]"
-    .replace(/^\s*[-–—]\s*/, '')              // remove leading dash that might be left
-    .trim() || 'Service';
+function chipNode(label, icon, value){
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = 'chip';
+  node.dataset.value = value;
+  node.innerHTML = `<span class="ico">${icon}</span><span>${label}</span>`;
+  node.addEventListener('click', ()=>{
+    ACTIVE_CAT = value;
+    updateActiveChip();
+    renderServices(filterServices());
+  });
+  return node;
+}
+
+function updateActiveChip(){
+  [...elCatsBar.querySelectorAll('.chip')].forEach(ch=>{
+    ch.classList.toggle('active', ch.dataset.value === ACTIVE_CAT);
+  });
+}
+
+function filterServices(){
+  const q = (elQ.value || '').toLowerCase();
+  return ALL_SERVICES.filter(s=>{
+    const inCat = !ACTIVE_CAT || s.category === ACTIVE_CAT;
+    const hay = `${s.name} ${s.title} ${s.category}`.toLowerCase();
+    return inCat && (!q || hay.includes(q));
+  });
 }
 
 function renderServices(services) {
@@ -88,7 +204,7 @@ function renderServices(services) {
           ${s.refill ? '<span class="pill">Refill</span>' : ''}
         </div>
         <div class="row" style="justify-content:space-between">
-          <div><strong>${price}</strong> <span class="muted">/ 1k</span></div>
+          <div class="price"><strong>${price}</strong> <span class="per">/ 1k</span></div>
           <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
         </div>
       </div>
@@ -96,9 +212,7 @@ function renderServices(services) {
   }).join('');
 }
 
-function escapeHtml(x){
-  return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''
-}
+function escapeHtml(x){return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''}
 
 async function placeOrder(serviceId, link, quantity, runs, interval) {
   const res = await fetch('/api/order', {
@@ -115,15 +229,13 @@ function openOrder(svc){
   if(!qty || qty < svc.min || qty > svc.max){ alert('Quantity out of range'); return; }
   placeOrder(svc.id, link, qty).then(r=>{
     if(r.error) alert('Error: '+r.error);
-    else{
-      alert('Order placed! ID: '+r.order);
-    }
+    else alert('Order placed! ID: '+r.order);
   }).catch(e=>alert('Network issue: '+e.message));
 }
 
-elQ.addEventListener('input', fetchServices);
-elCat.addEventListener('change', fetchServices);
+elQ.addEventListener('input', () => renderServices(filterServices()));
 elReload.addEventListener('click', fetchServices);
+
 fetchServices();
 </script>
 </body>
