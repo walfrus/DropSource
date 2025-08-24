@@ -63,7 +63,9 @@ async function fetchServices() {
 function renderServices(services) {
   elGrid.innerHTML = services.map(s => `
     <div class="card">
-      <h3 class="brand">[DropSource] — ${escapeHtml(s.name ?? s.title ?? "Service")}</h3>
+      <h3>
+        <span class="brand">[DropSource]</span> — ${escapeHtml(s.name ?? s.title ?? "Service")}
+      </h3>
       <div class="muted">${escapeHtml(s.category)}</div>
       <div class="row" style="margin:8px 0 10px">
         <span class="pill">Min ${s.min}</span>
