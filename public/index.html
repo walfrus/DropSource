@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DropSource — SMM</title>
   <style>
-    :root { --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3; --brand:#59a0ff; --ok:#1fa37d; --err:#e25b5b;}
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
-    header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #26282d}
+    :root { --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3; --brand:#59a0ff; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui, -apple-system, Segoe UI, Roboto;}
+    header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #26282d;}
     .container{max-width:1100px;margin:0 auto;padding:16px}
     input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
     button{cursor:pointer}
@@ -19,12 +19,6 @@
     .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
     .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
     .brand{color:var(--brand)}
-    #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#182028;border:1px solid #2a3442;padding:10px 14px;border-radius:10px;display:none}
-    #toast.ok{border-color:#1e7d64;color:#c9f3e7}
-    #toast.err{border-color:#7d2d2d;color:#ffd7d7}
-    #loading{display:none;gap:8px;align-items:center;justify-content:center;margin-top:18px;color:var(--muted)}
-    .spinner{width:16px;height:16px;border:2px solid #2d3340;border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
@@ -38,70 +32,38 @@
   </header>
 
   <div class="container">
-    <div id="loading" class="row"><div class="spinner"></div> <span>Loading services…</span></div>
     <div id="services" class="grid"></div>
   </div>
 
   <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
-  <div id="toast"></div>
 
 <script>
 const elQ = document.getElementById('q');
 const elCat = document.getElementById('cat');
 const elGrid = document.getElementById('services');
 const elReload = document.getElementById('reload');
-const elLoading = document.getElementById('loading');
-const elToast = document.getElementById('toast');
-
-const fmt = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:2 });
-
-let cacheServices = []; // keep last payload so we can open modal without stuffing JSON in onclick
-
-function toast(msg, type='ok'){
-  elToast.textContent = msg;
-  elToast.className = type === 'ok' ? 'ok' : 'err';
-  elToast.style.display = 'block';
-  setTimeout(()=> elToast.style.display='none', 2600);
-}
-
-function showLoading(v){ elLoading.style.display = v ? 'flex' : 'none'; }
-
-function escapeHtml(x){return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''}
 
 async function fetchServices() {
-  try{
-    showLoading(true);
-    const q = encodeURIComponent(elQ.value || '');
-    const cat = encodeURIComponent(elCat.value || '');
-    const url = `/api/services?${q ? 'q='+q+'&' : ''}${cat ? 'category='+cat : ''}`;
-    const res = await fetch(url, { cache:'no-store' });
-    if (!res.ok) throw new Error('Failed to load services');
-    const data = await res.json();
-    cacheServices = data;
-    renderServices(data);
-    // populate categories once
-    if (!elCat.dataset.filled) {
-      const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
-      for (const c of cats) {
-        const opt = document.createElement('option'); opt.value = c; opt.textContent = c; elCat.appendChild(opt);
-      }
-      elCat.dataset.filled = '1';
+  const q = encodeURIComponent(elQ.value || '');
+  const cat = encodeURIComponent(elCat.value || '');
+  const url = `/api/services?${q ? 'q='+q+'&' : ''}${cat ? 'category='+cat : ''}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  renderServices(data);
+  // populate categories once
+  if (!elCat.dataset.filled) {
+    const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
+    for (const c of cats) {
+      const opt = document.createElement('option'); opt.value = c; opt.textContent = c; elCat.appendChild(opt);
     }
-  }catch(err){
-    toast(err.message || 'Network issue', 'err');
-  }finally{
-    showLoading(false);
+    elCat.dataset.filled = '1';
   }
 }
 
 function renderServices(services) {
-  if (!services.length){
-    elGrid.innerHTML = `<div class="muted" style="padding:8px">No services match your search.</div>`;
-    return;
-  }
   elGrid.innerHTML = services.map(s => `
     <div class="card">
-      <h3>${escapeHtml(s.name)}</h3>
+      <h3 class="brand">[DropSource] — ${escapeHtml(s.name ?? s.title ?? "Service")}</h3>
       <div class="muted">${escapeHtml(s.category)}</div>
       <div class="row" style="margin:8px 0 10px">
         <span class="pill">Min ${s.min}</span>
@@ -110,21 +72,14 @@ function renderServices(services) {
         ${s.refill ? '<span class="pill">Refill</span>' : ''}
       </div>
       <div class="row" style="justify-content:space-between">
-        <div><strong>${fmt.format(s.price_per_1k)}</strong> <span class="muted">/ 1k</span></div>
-        <button data-id="${s.id}" class="order-btn">Order</button>
+        <div><strong>$${s.price_per_1k.toFixed(2)}</strong> <span class="muted">/ 1k</span></div>
+        <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
       </div>
     </div>
   `).join('');
-
-  // attach handlers after render
-  elGrid.querySelectorAll('.order-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const id = btn.getAttribute('data-id');
-      const svc = cacheServices.find(x=> String(x.id) === String(id));
-      if (svc) openOrder(svc);
-    });
-  });
 }
+
+function escapeHtml(x){return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''}
 
 async function placeOrder(serviceId, link, quantity, runs, interval) {
   const res = await fetch('/api/order', {
@@ -140,19 +95,17 @@ function openOrder(svc){
   const qty = Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
   if(!qty || qty < svc.min || qty > svc.max){ alert('Quantity out of range'); return; }
   placeOrder(svc.id, link, qty).then(r=>{
-    if(r.error) toast('Error: '+r.error, 'err');
-    else toast('Order placed! ID: '+r.order, 'ok');
-  }).catch(e=>toast('Network issue: '+e.message, 'err'));
+    if(r.error) alert('Error: '+r.error);
+    else{
+      alert('Order placed! ID: '+r.order);
+      // optional: redirect to a “My Orders” page you build later
+    }
+  }).catch(e=>alert('Network issue: '+e.message));
 }
 
-// debounce search for less spam
-function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
-const debouncedFetch = debounce(fetchServices, 250);
-
-elQ.addEventListener('input', debouncedFetch);
-elCat.addEventListener('change', fetchServices);
-elReload.addEventListener('click', fetchServices);
-
+elQ.addEventListener('input', () => fetchServices());
+elCat.addEventListener('change', () => fetchServices());
+elReload.addEventListener('click', () => fetchServices());
 fetchServices();
 </script>
 </body>
