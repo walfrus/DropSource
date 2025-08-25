@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, initial-scale=1, maximum-scale=1" />
+  <title>DropSource — SMM</title>
+  <style>
+    :root{
+      --bg:#0b0d13; --card:#141826; --card2:#101521; --ink:#e8ecf6; --ink-dim:#aab3c5;
+      --brand:#7c8aff; --muted:#2a3144; --accent:#9e7aff; --danger:#ff5964; --ok:#2dd4bf;
+      --chip:#1f2535; --chip-geo:#1e293b; --chip-fast:#0f3d2e; --chip-refill:#2b1e3b;
+      --chip-country:#132f57; --ring:#222a3c; --highlight:#2b2f40; --shadow:0 8px 24px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    a{color:inherit;text-decoration:none}
+    .wrap{max-width:1200px;margin:0 auto;padding:20px}
+    header{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+    .logo{display:flex;align-items:center;gap:10px}
+    .logo h1{font-size:16px;font-weight:700;margin:0}
+    .subtle{color:var(--ink-dim)}
+    .actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+    button,.btn{background:var(--card2);border:1px solid var(--ring);color:var(--ink);padding:8px 12px;border-radius:10px;cursor:pointer}
+    button:hover,.btn:hover{background:var(--highlight)}
+    .pill{padding:7px 10px;border-radius:999px;background:var(--card2);border:1px solid var(--ring)}
+    .searchRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+    .search{flex:1;min-width:220px;background:var(--card2);border:1px solid var(--ring);color:var(--ink);padding:10px 12px;border-radius:10px}
+    .select{background:var(--card2);border:1px solid var(--ring);color:var(--ink);padding:9px 10px;border-radius:10px}
+    .toast{color:#fff;background:var(--danger);border-radius:10px;padding:10px 12px;display:none;margin-top:8px}
+    /* sections */
+    .section{margin:16px 0;border:1px solid var(--ring);background:linear-gradient(180deg,rgba(124,138,255,.08),transparent 42%),var(--card);border-radius:14px;overflow:hidden}
+    .sectionHeader{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--ring);background:rgba(255,255,255,.02)}
+    .sectionHeader img{width:18px;height:18px}
+    .sectionHeader h3{margin:0;font-size:15px}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px}
+    @media (max-width:960px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:640px){.grid{grid-template-columns:1fr}}
+    /* cards */
+    .card{position:relative;background:radial-gradient(120% 120% at 0% 0%,rgba(124,138,255,.10),transparent 45%),var(--card2);border:1px solid var(--ring);border-radius:14px;padding:14px;box-shadow:var(--shadow)}
+    .card:hover{border-color:#2e3750}
+    .title{font-weight:700;margin:0 0 6px 0}
+    .meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--ink-dim);font-size:12px}
+    .chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+    .chip{font-size:11px;padding:5px 8px;border-radius:999px;border:1px solid var(--ring);background:var(--chip);color:#cfe4ff}
+    .chip.fast{background:var(--chip-fast);color:#a7ffe8;border-color:#1b4a3c}
+    .chip.refill{background:var(--chip-refill);color:#e3c6ff;border-color:#3c2751}
+    .chip.geo{background:var(--chip-geo);color:#c3dafe;border-color:#24324a}
+    .chip.country{background:var(--chip-country);color:#c3dafe;border-color:#1a335e}
+    .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+    .price{font-weight:800;background:#0f1220;border:1px solid var(--ring);padding:6px 10px;border-radius:10px}
+    .ghost{background:transparent;border:1px dashed var(--ring)}
+    .variantBar{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+    .variantBtn{font-size:12px}
+    .hl{box-shadow:0 0 0 2px rgba(124,138,255,.6) inset;border-color:#5565ff}
+    details.inline > summary{list-style:none}
+    details.inline[open] .card{outline:2px solid rgba(124,138,255,.35)}
+    /* modal for variants */
+    dialog{border:none;padding:0;border-radius:16px;background:var(--card);color:var(--ink);width:min(720px,95vw)}
+    .modalHead{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--ring)}
+    .modalBody{padding:12px}
+    .variant{border:1px solid var(--ring);border-radius:12px;padding:10px;margin:8px 0;background:var(--card2)}
+    .variant .row{margin-top:6px}
+    .x{cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">
+        <img src="/icons/allproducts.svg" width="24" height="24" alt="DropSource" />
+        <h1>DropSource <span class="subtle">· Boosts</span></h1>
+      </div>
+      <div class="actions">
+        <button id="btnAll" class="pill">All products</button>
+        <button id="btnExpand" class="pill">Expand all</button>
+        <button id="btnCollapse" class="pill">Collapse all</button>
+        <button id="btnInline" class="pill">Show variants inline</button>
+      </div>
+    </header>
+
+    <div class="searchRow">
+      <input id="q" class="search" placeholder="Search services…" />
+      <select id="sort" class="select">
+        <option value="asc">Price: Low → High</option>
+        <option value="desc">Price: High → Low</option>
+      </select>
+      <button id="reload" class="btn">Reload</button>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <div id="root"></div>
+  </div>
+
+  <dialog id="variantsModal">
+    <div class="modalHead">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img id="modalIcon" src="/icons/other.svg" width="18" height="18" alt="">
+        <strong id="modalTitle">Variants</strong>
+      </div>
+      <span class="x" onclick="modal.close()">✕</span>
+    </div>
+    <div class="modalBody" id="modalBody"></div>
+  </dialog>
+
+  <script>
+    // -------- icon map (absolute paths from domain root) ----------
+    const ICONS = {
+      instagram:'/icons/instagram.svg',
+      tiktok:'/icons/tiktok.svg',
+      youtube:'/icons/youtube.svg',
+      facebook:'/icons/facebook.svg',
+      spotify:'/icons/spotify.svg',
+      twitter:'/icons/x.svg',
+      x:'/icons/x.svg',
+      telegram:'/icons/telegram.svg',
+      threads:'/icons/threads.svg',
+      soundcloud:'/icons/soundcloud.svg',
+      reverbnation:'/icons/reverbnation.svg',
+      shazam:'/icons/shazam.svg',
+      vk:'/icons/vk.svg',
+      tidal:'/icons/tidal.svg',
+      datpiff:'/icons/datpiff.svg',
+      pinterest:'/icons/pinterest.svg',
+      webtraffic:'/icons/webtraffic.svg',
+      webtrafficgeo:'/icons/webtrafficgeo.svg',
+      websitepremium:'/icons/websitepremium.svg',
+      ownwebsite:'/icons/ownwebsite.svg',
+      vpn:'/icons/vpn.svg',
+      worldwidemobile:'/icons/worldwidemobile.svg',
+      worldwide:'/icons/worldwide.svg',
+      crypto:'/icons/crypto.svg',
+      other:'/icons/other.svg',
+      all:'/icons/allproducts.svg'
+    };
+
+    // ------- helpers -------
+    const $ = (q, el=document)=>el.querySelector(q);
+    const $$ = (q, el=document)=>[...el.querySelectorAll(q)];
+    const money = v => `$${Number(v).toFixed(2)} /1k`;
+    const toast = (msg) => { const t=$("#toast"); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 4000) };
+
+    // tag beautifier
+    function tagChip(t){
+      const s = document.createElement('span');
+      s.className = 'chip';
+      const L = t.toLowerCase();
+      if (['fast','instant','speed'].some(k=>L.includes(k))) s.classList.add('fast');
+      if (['refill','refil'].some(k=>L.includes(k))) s.classList.add('refill');
+      if (['geo','targeted'].some(k=>L.includes(k))) s.classList.add('geo');
+      // country-like (ISO or names)
+      if (/^[A-Z]{2,3}$/.test(t) || ['usa','india','brazil','mexico','indonesia','korea','turkey','russia','spain','france','italy'].includes(L)) s.classList.add('country');
+      s.textContent = t.toUpperCase();
+      return s;
+    }
+
+    // derive platform slug from name
+    function guessPlatform(name=''){
+      const n = name.toLowerCase();
+      if (n.includes('instagram')) return 'instagram';
+      if (n.includes('tiktok')) return 'tiktok';
+      if (n.includes('youtube')) return 'youtube';
+      if (n.includes('facebook')) return 'facebook';
+      if (n.includes('spotify')) return 'spotify';
+      if (n.includes('telegram')) return 'telegram';
+      if (n.includes('threads')) return 'threads';
+      if (n.includes('twitter') || n.includes(' x ')) return 'x';
+      if (n.includes('soundcloud')) return 'soundcloud';
+      if (n.includes('reverbnation')) return 'reverbnation';
+      if (n.includes('vk')) return 'vk';
+      if (n.includes('shazam')) return 'shazam';
+      if (n.includes('tidal')) return 'tidal';
+      if (n.includes('datpiff')) return 'datpiff';
+      if (n.includes('pinterest')) return 'pinterest';
+      if (n.includes('web traffic geo')) return 'webtrafficgeo';
+      if (n.includes('web traffic')) return 'webtraffic';
+      if (n.includes('website premium')) return 'websitepremium';
+      if (n.includes('own website')) return 'ownwebsite';
+      return 'other';
+    }
+
+    // group by platform → product
+    function groupServices(raw){
+      // expected shape already mapped on the server:
+      // { id, platform, product, min, max, price_per_1k, tags[], variants[] }
+      const sections = new Map();
+      for (const s of raw){
+        const plat = s.platform || guessPlatform(s.name || s.product || '');
+        if (!sections.has(plat)) sections.set(plat, []);
+        sections.get(plat).push(s);
+      }
+      return sections;
+    }
+
+    // ---------- rendering ----------
+    const root = $("#root");
+    const modal = $("#variantsModal");
+    const modalBody = $("#modalBody");
+    const modalTitle = $("#modalTitle");
+    const modalIcon = $("#modalIcon");
+
+    function render(sections, sortDir='asc', q=''){
+      root.innerHTML = '';
+      const qx = q.trim().toLowerCase();
+
+      for (const [plat, items] of sections){
+        const filtered = items.filter(s => {
+          if (!qx) return true;
+          return [s.platform, s.product, s.name, (s.tags||[]).join(' ')].join(' ').toLowerCase().includes(qx);
+        });
+
+        if (!filtered.length) continue;
+
+        // sort by price
+        filtered.sort((a,b)=>{
+          const pa = a.price_per_1k ?? 999999;
+          const pb = b.price_per_1k ?? 999999;
+          return sortDir==='asc' ? pa-pb : pb-pa;
+        });
+
+        const sec = document.createElement('section');
+        sec.className = 'section';
+
+        const head = document.createElement('div');
+        head.className = 'sectionHeader';
+        const icon = document.createElement('img');
+        icon.src = ICONS[plat] || ICONS.other;
+        icon.alt = plat;
+        const h = document.createElement('h3');
+        h.textContent = plat.charAt(0).toUpperCase()+plat.slice(1);
+        const count = document.createElement('span');
+        count.className = 'subtle';
+        count.textContent = `${filtered.length} services`;
+        head.append(icon, h, count);
+        sec.appendChild(head);
+
+        const grid = document.createElement('div'); grid.className = 'grid';
+
+        // group into product “cards” (combine variants by product label)
+        const byProduct = new Map();
+        for (const s of filtered){
+          const key = s.product || s.name || s.id;
+          if (!byProduct.has(key)) byProduct.set(key, []);
+          byProduct.get(key).push(s);
+        }
+
+        byProduct.forEach((variants, productName)=>{
+          // price summary
+          const cheapest = [...variants].sort((a,b)=>(a.price_per_1k??1e9)-(b.price_per_1k??1e9))[0];
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const title = document.createElement('h4');
+          title.className = 'title';
+          title.textContent = `[DropSource] — ${productName}`;
+          card.appendChild(title);
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const vCount = document.createElement('span'); vCount.textContent = `${variants.length} variants available`;
+          meta.appendChild(vCount);
+          card.appendChild(meta);
+
+          const chips = document.createElement('div'); chips.className='chips';
+          // collect some representative tags
+          const allTags = new Set(variants.flatMap(v=>v.tags||[]).slice(0,6));
+          for (const t of allTags) chips.appendChild(tagChip(t));
+          card.appendChild(chips);
+
+          const row = document.createElement('div'); row.className='row';
+          const price = document.createElement('div'); price.className='price'; price.textContent = money(cheapest.price_per_1k||0.01);
+          const btns = document.createElement('div'); btns.style.display='flex'; btns.style.gap='8px';
+          const b1 = document.createElement('button'); b1.textContent='View variants'; b1.onclick=()=>openModal(plat, productName, variants);
+          const b2 = document.createElement('button'); b2.className='ghost'; b2.textContent='Order cheapest';
+          b2.onclick = ()=>orderVariant(cheapest);
+          btns.append(b1,b2);
+          row.append(price,btns);
+          card.appendChild(row);
+
+          // inline variant pills (toggle)
+          const bar = document.createElement('div'); bar.className='variantBar'; bar.dataset.inline='0';
+          variants.slice(0,8).forEach(v=>{
+            const vb = document.createElement('button'); vb.className='pill variantBtn';
+            vb.textContent = (v.type || 'Default');
+            vb.title = `${money(v.price_per_1k||0)} — Min ${v.min} · Max ${v.max}`;
+            vb.onclick = ()=>orderVariant(v);
+            bar.appendChild(vb);
+          });
+          card.appendChild(bar);
+
+          grid.appendChild(card);
+        });
+
+        sec.appendChild(grid);
+        root.appendChild(sec);
+      }
+    }
+
+    function openModal(plat, productName, variants){
+      modalTitle.textContent = productName;
+      modalIcon.src = ICONS[plat] || ICONS.other;
+      modalBody.innerHTML = '';
+      const sorted = [...variants].sort((a,b)=>(a.price_per_1k??1e9)-(b.price_per_1k??1e9));
+      sorted.forEach(v=>{
+        const box = document.createElement('div'); box.className='variant';
+        const t = document.createElement('div'); t.style.display='flex'; t.style.justifyContent='space-between'; t.style.alignItems='center';
+        const left = document.createElement('div');
+        left.innerHTML = `<strong>${v.type || 'Default'}</strong> · Min ${v.min} · Max ${v.max}`;
+        const price = document.createElement('div'); price.className='price'; price.textContent=money(v.price_per_1k||0);
+        t.append(left, price);
+        const chips = document.createElement('div'); chips.className='chips';
+        (v.tags||[]).forEach(tg=>chips.appendChild(tagChip(tg)));
+        const row = document.createElement('div'); row.className='row';
+        const order = document.createElement('button'); order.textContent='Order this'; order.onclick=()=>orderVariant(v);
+        row.append(document.createElement('span'), order);
+        box.append(t, chips, row);
+        modalBody.appendChild(box);
+      });
+      modal.showModal();
+    }
+
+    async function orderVariant(variant){
+      // stub; wire to your /api/order later
+      alert(`Pretend ordering:\n\n${variant.product || variant.name}\nType: ${variant.type}\nPrice: ${money(variant.price_per_1k||0)}`);
+    }
+
+    // ---------- fetch + wire up ----------
+    let RAW = [];
+    let GROUPED = new Map();
+
+    async function load(){
+      try{
+        const r = await fetch('/api/services', { method:'GET' });
+        if (!r.ok){
+          const text = await r.text().catch(()=>r.statusText);
+          throw new Error(`Upstream /api/services failed: ${r.status} ${text.slice(0,120)}`);
+        }
+        const data = await r.json();
+        if (!Array.isArray(data)) throw new Error('Unexpected payload from /api/services');
+        RAW = data;
+        GROUPED = groupServices(RAW);
+        render(GROUPED, $('#sort').value, $('#q').value);
+      }catch(err){
+        console.error(err);
+        toast('Load error: API 500');
+      }
+    }
+
+    // controls
+    $('#reload').onclick = load;
+    $('#sort').onchange = ()=>render(GROUPED, $('#sort').value, $('#q').value);
+    $('#q').oninput = ()=>render(GROUPED, $('#sort').value, $('#q').value);
+
+    $('#btnExpand').onclick = ()=> {
+      // visual emphasis only — add highlight to cards
+      $$('.card').forEach(c=>c.classList.add('hl'));
+      setTimeout(()=>$$('.card').forEach(c=>c.classList.remove('hl')), 1400);
+    };
+    $('#btnCollapse').onclick = ()=> {
+      $$('.card').forEach(c=>c.classList.remove('hl'));
+    };
+    $('#btnInline').onclick = ()=> {
+      const on = $('#btnInline').dataset.on === '1';
+      $('#btnInline').dataset.on = on ? '0':'1';
+      $('#btnInline').textContent = on ? 'Show variants inline' : 'Hide variants inline';
+      $$('.variantBar').forEach(b=>b.style.display = on ? 'none':'flex');
+    };
+    $('#btnAll').onclick = ()=> {
+      $('#q').value = '';
+      $('#sort').value = 'asc';
+      render(GROUPED, 'asc', '');
+    };
+
+    // initial
+    load();
+  </script>
+</body>
+</html>
