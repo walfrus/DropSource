@@ -1,0 +1,40 @@
+# macOS Finder garbage
+.DS_Store
+**/.DS_Store
+
+# Node / Vercel
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+.next/
+dist/
+build/
+.vercel/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Icons cache
+icons/.DS_Store
