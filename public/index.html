@@ -223,10 +223,23 @@ function normalizeName(x) {
   return raw.replace(/\[?\s*DropSource\s*\]?/gi,'').replace(/^\s*[-–—]\s*/,'').trim() || 'Service';
 }
 
+function uniqueServices(services) {
+  const seen = new Set();
+  return services.filter(s => {
+    const key = normalizeName(s.name)
+      .replace(/\[.*?\]/g,'') // strip [bracketed junk]
+      .trim()
+      .toLowerCase();
+    if (seen.has(key)) return false; // already saw it
+    seen.add(key);
+    return true;
+  });
+}
+
 async function fetchServices() {
   const res = await fetch('/api/services');
   const data = await res.json();
-  ALL_SERVICES = data;
+  ALL_SERVICES = uniqueServices(data);
   buildCategories(data);
   renderServices(filterServices());
 }
@@ -287,14 +300,30 @@ function filterServices(){
 
 function renderServices(services) {
   elGrid.innerHTML = services.map(s => {
-    const displayName = escapeHtml(normalizeName(s.name ?? s.title ?? 'Service'));
+    // core name
+    const baseName = normalizeName(s.name ?? s.title ?? 'Service');
+
+    // strip garbage words
+    const cleanName = baseName
+      .replace(/%100/g,'')                // remove %100
+      .replace(/\bWORKING AFTER UPDATE\b/gi,'')
+      .replace(/\bProvider Service\b/gi,'')
+      .replace(/\bR\d+\b/g,'')            // remove R30, R60 etc
+      .replace(/\d{2}\.\d{2}\.\d{4}/g,'') // remove dates like 21.08.2024
+      .replace(/\s+/g,' ')                // collapse spaces
+      .trim();
+
+    // always show as “[DropSource] — Instagram Followers”
+    const title = `[DropSource] — ${cleanName}`;
+
     const price = (typeof s.price_per_1k === 'number' && isFinite(s.price_per_1k))
       ? `$${s.price_per_1k.toFixed(2)}`
       : '-';
+
     return `
       <div class="card">
-        <h3><span class="brand">[DropSource]</span> — ${displayName}</h3>
-        <div class="muted">${escapeHtml(s.category || '')}</div>
+        <h3>${escapeHtml(title)}</h3>
+        <div class="muted">Max ${s.max.toLocaleString()}</div>
         <div class="row" style="margin:8px 0 10px">
           <span class="pill">Min ${s.min}</span>
           <span class="pill">Max ${s.max}</span>
