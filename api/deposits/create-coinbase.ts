@@ -12,7 +12,7 @@ export default async function handler(req: any, res: any) {
   if (!cents || cents < 100) return res.status(400).json({ error: 'min $1.00' });
   const amountUsd = (cents / 100).toFixed(2);
 
-  await ensureUserAndWallet(sb, user);
+  await ensureUserAndWallet(user);
 
   // create pending deposit
   const { data: dep, error } = await sb.from('deposits').insert({
