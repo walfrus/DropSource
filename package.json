@@ -1,11 +1,6 @@
 {
   "name": "dropsource",
   "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "echo \"no build\""
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.45.0"
-  }
+  "scripts": { "build": "echo no-build" },
+  "dependencies": { "@supabase/supabase-js": "^2.45.0" }
 }
