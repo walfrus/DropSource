@@ -1,7 +1,4 @@
-
 {
-  "version": 2,
-  "cleanUrls": true,
   "routes": [
     { "src": "^/balance$", "dest": "/balance.html" }
   ]
