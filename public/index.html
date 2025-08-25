@@ -19,6 +19,7 @@
   .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
   .ghost{background:#0f1117;border:1px solid #2a2d34}
   .toolbar .count{color:var(--muted);font-size:12px}
+  .ghost img.ico{width:14px;height:14px;margin-right:6px;vertical-align:middle}
 
   /* sections */
   .section{border:1px solid #24262c;border-radius:14px;overflow:hidden;margin-bottom:14px;background:#121319}
@@ -59,6 +60,9 @@
 
 <div class="container">
   <div class="toolbar">
+    <button id="showAll" class="ghost">
+      <img src="/icons/star.svg" class="ico" alt=""> All products
+    </button>
     <button id="expandAll" class="ghost">Expand all</button>
     <button id="collapseAll" class="ghost">Collapse all</button>
     <span class="count" id="totalCount"></span>
@@ -77,11 +81,12 @@ const elErr = document.getElementById('err');
 const elTotal = document.getElementById('totalCount');
 const elExpandAll = document.getElementById('expandAll');
 const elCollapseAll = document.getElementById('collapseAll');
+const elShowAll = document.getElementById('showAll');
 
 let ALL_SERVICES = [];
 let COLLAPSED = new Set(); // section slugs that are collapsed
 
-/* ===== ICONS (match your actual filenames) ===== */
+/* ===== ICONS (edit filenames to match /public/icons) ===== */
 const ICON_PATHS = {
   instagram:'instagram.svg',
   tiktok:'tiktok.svg',
@@ -91,8 +96,8 @@ const ICON_PATHS = {
   telegram:'telegram.svg',
   spotify:'spotify.svg',
   threads:'threads.svg',
-  soundcloud:'soundcloud.svg',  
-  pinterest:'pinterest.svg',                
+  soundcloud:'soundcloud.svg',  // adjust if you renamed
+  pinterest:'pinterest.svg',                 // adjust if you renamed
   reddit:'reddit.svg',
   linkedin:'linkedin.svg',
   twitch:'twitch.svg',
@@ -115,7 +120,8 @@ const ICON_PATHS = {
   webtrafficgeo:'webtraffic.svg',
   ownwebsite:'onwebsite.svg',
 
-  other:'other.svg'
+  /* fallback for categories we don’t recognize */
+  other:'other.svg'  // ← change this to swap the "Other" icon
 };
 
 /* ===== PLATFORM RULES ===== */
@@ -254,7 +260,7 @@ function render(){
   const groups=groupByPlatform(ALL_SERVICES,q);
 
   // order: priority first, then by group size
-  const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','snapchat','reddit','linkedin','twitch','pinterest','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
+  const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','pinterest','reddit','linkedin','twitch','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
   const ordered=[...groups.keys()].sort((a,b)=>{
     const ai=priority.indexOf(a), bi=priority.indexOf(b);
     if(ai!==-1 || bi!==-1) return (ai===-1?999:ai) - (bi===-1?999:bi);
@@ -331,6 +337,11 @@ elExpandAll.addEventListener('click', ()=>{ COLLAPSED.clear(); render(); });
 elCollapseAll.addEventListener('click', ()=>{
   const slugs=[...document.querySelectorAll('.section')].map(s=>s.dataset.slug);
   COLLAPSED=new Set(slugs); render();
+});
+elShowAll.addEventListener('click', ()=>{
+  elQ.value = '';
+  COLLAPSED.clear();
+  render();
 });
 
 /* boot */
