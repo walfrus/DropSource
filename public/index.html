@@ -250,13 +250,13 @@ async function load(){
           <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
           <div class="row">
             <button class="btn"
-              data-order
-              data-id="${cheapest.id}"
-              data-min="${cheapest.min}"
-              data-max="${cheapest.max}"
-              data-price="${cheapest.price_per_1k}"
-              data-name="${escapeHtml(type)}"
-            >Order cheapest</button>
+  onclick="orderClick(this)"
+  data-id="${cheapest.id}"
+  data-min="${cheapest.min}"
+  data-max="${cheapest.max}"
+  data-price="${cheapest.price_per_1k}"
+  data-name="${escapeHtml(type)}"
+>Order cheapest</button>
             <button class="btn" data-expand>View variants</button>
           </div>
         </div>
@@ -278,13 +278,13 @@ async function load(){
           <div class="row">
             <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
             <button class="btn"
-              data-order
-              data-id="${svc.id}"
-              data-min="${svc.min}"
-              data-max="${svc.max}"
-              data-price="${svc.price_per_1k}"
-              data-name="${escapeHtml(type)}"
-            >Order</button>
+  onclick="orderClick(this)"
+  data-id="${svc.id}"
+  data-min="${svc.min}"
+  data-max="${svc.max}"
+  data-price="${svc.price_per_1k}"
+  data-name="${escapeHtml(type)}"
+>Order</button>
           </div>`;
         vWrap.appendChild(row);
       }
@@ -354,7 +354,44 @@ document.addEventListener('click', async (e) => {
     alert(`Network issue: ${err.message}`);
   }
 });
+function orderClick(btn){
+  const id    = Number(btn.dataset.id);
+  const min   = Number(btn.dataset.min || 1);
+  const max   = Number(btn.dataset.max || 1);
+  const price = Number(btn.dataset.price || 0);
+  const label = btn.dataset.name || 'Service';
 
+  const link = prompt(`Paste target link for ${label}:`);
+  if (!link) return;
+
+  // allow any positive integer; warn if outside provider min/max
+  let qty;
+  while (true) {
+    const raw = prompt(`Enter quantity (provider shows min ${min}, max ${max}). Any positive integer allowed.`);
+    if (raw === null) return;
+    qty = Number(raw);
+    if (Number.isInteger(qty) && qty > 0) break;
+    alert('Please enter a whole number greater than 0.');
+  }
+
+  const estimate = (qty / 1000) * price;
+  let proceed = true;
+  if (qty < min || qty > max) {
+    proceed = confirm(
+      `Warning: ${qty} is outside provider range (${min}–${max}).\n` +
+      `We’ll submit it anyway, but the provider may reject it.\n\n` +
+      `Estimated charge: $${estimate.toFixed(4)}\nProceed?`
+    );
+  } else {
+    proceed = confirm(`Estimated charge: $${estimate.toFixed(4)}\nProceed?`);
+  }
+  if (!proceed) return;
+
+  placeOrder(id, link, qty).then(r=>{
+    if (r.error) alert(`Error: ${r.error}`);
+    else alert(`Order placed! ID: ${r.order}`);
+  }).catch(e=>alert(`Network issue: ${e.message}`));
+}
 load();
 </script>
 </body>
