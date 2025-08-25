@@ -80,7 +80,10 @@ export default async function handler(req: any, res: any) {
       }).eq('id', dep.id);
       return send(res, 400, { error: json?.errors?.[0]?.detail || 'square_failed' });
     }
-
+    const base = process.env.SQUARE_ENV === 'sandbox'
+  ? 'https://connect.squareupsandbox.com'
+  : 'https://connect.squareup.com';
+// then POST to `${base}/v2/online-checkout/payment-links`
     // persist provider reference
     await sb.from('deposits').update({
       provider_id: json?.payment_link?.id || null,
