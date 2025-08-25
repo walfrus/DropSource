@@ -39,7 +39,6 @@
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
 
     .card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s, box-shadow .15s, background .15s}
-    /* platform hover uses --plat from the section */
     .section:hover .card{background:linear-gradient(0deg, rgba(255,255,255,.01), transparent)}
     .card:hover{border-color:var(--plat, var(--brand)); box-shadow:0 0 0 1px var(--plat, var(--brand)) inset, var(--shadow)}
     .card h3{margin:0;font-size:15px;line-height:1.35}
@@ -85,7 +84,38 @@ elQ.oninput = load; elCat.onchange = load;
 
 function showErr(m){ console.error(m); alert(m); }
 
-// platform colors (used for hover)
+/* ---------- PRICE NORMALIZATION + FLOOR ---------- */
+// Adjust these if you want to force minimum display price per 1k:
+const MIN_DISPLAY_PER_1K = 0.49;   // never show below this (visual floor)
+const PRICE_ENDING_99 = false;      // set true to show .99 endings
+
+function normalizePrice(svc){
+  // prefer server fields, fallback to raw panel "rate"
+  let p = Number(svc.price_per_1k ?? svc.rate ?? svc.price ?? 0);
+  if (!isFinite(p) || p <= 0) p = 0;
+
+  // If it looks like a TOTAL package price (huge) and max known, convert to per-1k
+  if (p > 1000 && Number(svc.max) > 0) {
+    p = (p / Number(svc.max)) * 1000;
+  }
+
+  // If it looks suspiciously tiny (likely per-unit), try scaling using min
+  if (p > 0 && p < 0.02 && Number(svc.min) >= 100) {
+    p = p * (Math.max(1000, Number(svc.min)) / 1); // scale to /1k
+  }
+
+  // visual floor so you don't advertise $0.01/1k
+  if (p < MIN_DISPLAY_PER_1K) p = MIN_DISPLAY_PER_1K;
+
+  // pretty .99 ending (optional)
+  if (PRICE_ENDING_99) {
+    p = Math.floor(p) + 0.99;
+  }
+
+  return p;
+}
+
+/* ---------- PLATFORM DETECT / TYPE DETECT ---------- */
 const PLATFORM_COLORS = {
   Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
   TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
@@ -96,7 +126,6 @@ const PLATFORM_COLORS = {
   Reverbnation:'#000000', Tumblr:'#35465C', WhatsApp:'#25D366', Other:'#59a0ff'
 };
 
-// detect platform from category/name
 function detectPlatform(str=''){
   const s = String(str).toLowerCase();
   const map = [
@@ -131,7 +160,6 @@ function detectPlatform(str=''){
   return 'Other';
 }
 
-// base type detector (card headline)
 const TYPE_PATTERNS = [
   ['Followers', /follows?|followers?|subs?(cribers?)?/i],
   ['Likes', /likes?/i],
@@ -146,17 +174,12 @@ const TYPE_PATTERNS = [
   ['Story', /story|stories/i],
   ['Traffic', /traffic|visits?/i],
 ];
-
 function getBaseType(name){
   for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label;
   return 'Other';
 }
 
-function brandLabel(rawName){
-  const clean = String(rawName||'').replace(/smmgoal/gi,'DropSource').replace(/\[?DropSource\]?\s*[—-]\s*/i,'').trim();
-  return `[DropSource] — ${clean}`;
-}
-
+/* ---------- TAGS / UTILS ---------- */
 function makeTags(name){
   const n = String(name||'');
   const tags = [];
@@ -170,7 +193,10 @@ function makeTags(name){
   if (/new accounts?/i.test(n)) add('New Accounts','gray');
   return tags;
 }
+function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||'' }
+function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
 
+/* ---------- LOAD + RENDER ---------- */
 async function load(){
   const q = encodeURIComponent(elQ.value||'');
   const cat = encodeURIComponent(elCat.value||'');
@@ -188,6 +214,8 @@ async function load(){
     if(!byPlat.has(plat)) byPlat.set(plat, new Map());
     const m = byPlat.get(plat);
     if(!m.has(type)) m.set(type, []);
+    // attach normalized per-1k for sorting/display
+    s.price_per_1k = normalizePrice(s);
     m.get(type).push(s);
   }
 
@@ -223,6 +251,7 @@ async function load(){
 
     const grid = sec.querySelector('.grid');
     for(const [type, list] of byType){
+      // sort by normalized price
       list.sort((a,b)=>a.price_per_1k - b.price_per_1k);
       const cheapest = list[0];
 
@@ -240,7 +269,7 @@ async function load(){
         <div class="row" style="justify-content:space-between;align-items:center">
           <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
           <div class="row">
-            <button class="btn" data-order="${cheapest.id}">Order cheapest</button>
+            <button class="btn" data-order>Order</button>
             <button class="btn" data-expand>View variants</button>
           </div>
         </div>
@@ -260,54 +289,65 @@ async function load(){
             ${tags.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
           </div>
           <div class="row">
-            <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
-            <button class="btn" data-order="${svc.id}">Order</button>
+            <div class="price" style="font-size:13px">$${normalizePrice(svc).toFixed(2)} <span class="muted">/1k</span></div>
+            <button class="btn" data-order-variant="${svc.id}">Order</button>
           </div>`;
         vWrap.appendChild(row);
       }
       card.appendChild(det);
 
+      // ====== ORDER HANDLERS (custom amount prompt) ======
       card.querySelector('[data-expand]').onclick = () => det.open = !det.open;
 
-// NEW: smart-order with custom amount
-function orderWithCustomAmount(variants){
-  const link = prompt('Paste the target link (post/profile URL):');
-  if (!link) return;
+      function orderWithCustomAmount(variants, chosenId){
+        const link = prompt('Paste the target link (post/profile URL):');
+        if (!link) return;
 
-  const qty = Number(prompt('Quantity (any number you want):'));
-  if (!Number.isFinite(qty) || qty <= 0) { alert('Invalid quantity'); return; }
+        const qty = Number(prompt('Quantity (any number you want):'));
+        if (!Number.isFinite(qty) || qty <= 0) { alert('Invalid quantity'); return; }
 
-  // find all variants that allow this quantity
-  const eligible = variants.filter(v => Number(v.min) <= qty && qty <= Number(v.max));
-  if (eligible.length === 0) {
-    // suggest nearest allowed amount using the cheapest variant overall
-    const cheapest = [...variants].sort((a,b)=>normalizePrice(a)-normalizePrice(b))[0];
-    const minAllowed = Number(cheapest.min);
-    if (qty < minAllowed) {
-      if (confirm(`Providers require at least ${minAllowed}. Order ${minAllowed} instead?`)) {
-        placeOrder(cheapest.id, link, minAllowed).then(handleOrderResponse).catch(handleOrderError);
+        // If user clicked a specific variant "Order" button:
+        if (chosenId){
+          const svc = variants.find(v => v.id == chosenId);
+          if (!svc) return alert('Service not found');
+          if (qty < Number(svc.min) || qty > Number(svc.max)) {
+            return alert(`This variant supports ${svc.min}–${svc.max}. Try a different amount or use "Order" on the card to auto-pick.`);
+          }
+          placeOrder(svc.id, link, qty).then(handleOrderResponse).catch(handleOrderError);
+          return;
+        }
+
+        // Otherwise: pick the cheapest eligible variant for that qty
+        const eligible = variants.filter(v => Number(v.min) <= qty && qty <= Number(v.max));
+        if (eligible.length === 0) {
+          const cheapest = [...variants].sort((a,b)=>normalizePrice(a)-normalizePrice(b))[0];
+          const minAllowed = Number(cheapest.min);
+          if (qty < minAllowed) {
+            if (confirm(`Providers require at least ${minAllowed}. Order ${minAllowed} instead?`)) {
+              placeOrder(cheapest.id, link, minAllowed).then(handleOrderResponse).catch(handleOrderError);
+            }
+            return;
+          }
+          alert('No variant supports that amount. Try another quantity.');
+          return;
+        }
+        const chosen = eligible.sort((a,b)=>normalizePrice(a)-normalizePrice(b))[0];
+        placeOrder(chosen.id, link, qty).then(handleOrderResponse).catch(handleOrderError);
       }
-      return;
-    }
-    alert('No variant supports that amount. Try another quantity.');
-    return;
-  }
 
-  // pick the cheapest eligible variant
-  const chosen = eligible.sort((a,b)=>normalizePrice(a)-normalizePrice(b))[0];
-  placeOrder(chosen.id, link, qty).then(handleOrderResponse).catch(handleOrderError);
-}
+      function handleOrderResponse(r){
+        if (r?.error) alert('Error: ' + r.error);
+        else alert('Order placed! ID: ' + r.order);
+      }
+      function handleOrderError(e){ alert('Network issue: ' + e.message); }
 
-function handleOrderResponse(r){
-  if (r?.error) alert('Error: ' + r.error);
-  else alert('Order placed! ID: ' + r.order);
-}
-function handleOrderError(e){ alert('Network issue: ' + e.message); }
+      // big "Order" button -> custom amount, auto-pick cheapest eligible
+      card.querySelector('[data-order]').onclick = () => orderWithCustomAmount(list);
 
-// wire buttons
-card.querySelectorAll('[data-order]').forEach(btn=>{
-  btn.onclick = () => orderWithCustomAmount(list);
-});
+      // per-variant "Order" -> custom amount but must be within that variant's min/max
+      card.querySelectorAll('[data-order-variant]').forEach(btn=>{
+        btn.onclick = () => orderWithCustomAmount(list, btn.getAttribute('data-order-variant'));
+      });
 
       grid.appendChild(card);
     }
@@ -316,25 +356,13 @@ card.querySelectorAll('[data-order]').forEach(btn=>{
   }
 }
 
-function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
-function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||'' }
-
+/* ---------- API CALLS ---------- */
 async function placeOrder(serviceId, link, quantity, runs, interval){
   const res = await fetch(API, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ action:'add', service: serviceId, link, quantity, runs, interval })
   });
   return res.json();
-}
-
-function openOrder(svc){
-  const link = prompt('Paste the target link (post/profile URL):'); if(!link) return;
-  const qty = Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
-  if(!qty || qty<svc.min || qty>svc.max){ alert('Quantity out of range'); return; }
-  placeOrder(svc.id, link, qty).then(r=>{
-    if(r.error) alert('Error: '+r.error);
-    else alert('Order placed! ID: '+r.order);
-  }).catch(e=>alert('Network issue: '+e.message));
 }
 
 load();
