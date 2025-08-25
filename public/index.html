@@ -9,13 +9,20 @@
     --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3;
     --brand:#59a0ff; --accent:#8b5cf6; --rule:#26282d;
     --grad-1:#2a2b45; --grad-2:#1c1d31;
+    --ring-blue: rgba(89,160,255,.45);
+    --ring-purple: rgba(139,92,246,.45);
+    --pill-qual: #243147;
+    --pill-fast: #2a3b2a;
+    --pill-refill:#352a3d;
+    --pill-geo:#0e3b3f;
+    --pill-country:#12344a;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
   header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule)}
   .container{max-width:1100px;margin:0 auto;padding:16px}
 
-  input,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
+  input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
   button{cursor:pointer}
   .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
   .ghost{background:#0f1117;border:1px solid #2a2d34}
@@ -36,23 +43,39 @@
   .section-body{padding:12px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 
-  /* cards — DropSource style */
+  /* cards — DS vibe */
   .card{
     position:relative;border-radius:18px;padding:18px 16px 52px;
     background: radial-gradient(120% 140% at 100% 0%, var(--grad-1) 0%, var(--grad-2) 60%);
     border:1px solid #2b2d3d;
     box-shadow:0 0 0 1px rgba(255,255,255,.02) inset, 0 8px 20px rgba(0,0,0,.35);
-    transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease;
+    transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease, outline .12s ease;
+    outline: 0 solid transparent;
   }
   .card:hover{
     transform:translateY(-2px);
     border-color:#3a3d57;
-    box-shadow:0 0 0 1px rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45), 0 0 0 3px var(--ring, rgba(139,92,246,.35));
+    box-shadow:0 0 0 1px rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45), 0 0 0 3px var(--ring, var(--ring-purple));
+  }
+  /* focus/selected highlight for keyboard users too */
+  .card:focus-within{
+    outline:3px solid var(--ring, var(--ring-blue));
+    outline-offset: 2px;
   }
   .card h3{margin:0 0 8px 0;font-size:15px;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .muted{color:var(--muted)}
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .pill{padding:3px 8px;border-radius:999px;background:#1b1c2a;border:1px solid #2b2d3d;color:#c8cbe6;font-size:12px}
+
+  .pill{
+    padding:3px 8px;border-radius:999px;border:1px solid #2b2d3d;color:#c8cbe6;font-size:12px;
+    background:#1b1c2a;
+  }
+  .pill.qual{background:var(--pill-qual)}
+  .pill.fast{background:var(--pill-fast)}
+  .pill.refill{background:var(--pill-refill)}
+  .pill.geo{background:var(--pill-geo); color:#9be8f1; border-color:#1b5a5f; font-weight:600}
+  .pill.country{background:var(--pill-country); color:#a5d8ff; border-color:#1a4c66; font-weight:600}
+
   .brand{color:var(--brand)}
 
   /* price badge */
@@ -67,8 +90,8 @@
   .modal-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;
   }
-  .modal{width:min(900px,100%);background:#0f1119;border:1px solid #2a2d34;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
-  .modal header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #222532}
+  .modal{width:min(920px,100%);background:#0f1119;border:1px solid #2a2d34;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
+  .modal header{display:flex;gap:8px;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #222532}
   .modal header h4{margin:0;font-size:16px}
   .modal .body{padding:12px 12px 16px;max-height:65vh;overflow:auto}
   table{width:100%;border-collapse:separate;border-spacing:0 8px}
@@ -78,7 +101,10 @@
   tr td:last-child, tr th:last-child{border-top-right-radius:8px;border-bottom-right-radius:8px}
   .chipline{display:flex;gap:6px;flex-wrap:wrap}
   .chip{padding:2px 6px;border-radius:999px;background:#1b1c2a;border:1px solid #2b2d3d;color:#c8cbe6;font-size:11px}
+  .chip.geo{background:var(--pill-geo); color:#9be8f1; border-color:#1b5a5f; font-weight:600}
+  .chip.country{background:var(--pill-country); color:#a5d8ff; border-color:#1a4c66; font-weight:600}
   .close{background:#121422;border:1px solid #2a2d34}
+
   .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
   #err{margin-top:12px;color:#ff6b6b;font-size:12px}
 </style>
@@ -88,6 +114,11 @@
   <div><strong class="brand">DropSource</strong> · Boosts</div>
   <div class="row">
     <input id="q" placeholder="Search services…"/>
+    <select id="sort">
+      <option value="price_asc">Price: Low → High</option>
+      <option value="price_desc">Price: High → Low</option>
+      <option value="alpha">Alphabetical</option>
+    </select>
     <button id="reload">Reload</button>
   </div>
 </header>
@@ -109,7 +140,14 @@
   <div class="modal">
     <header>
       <h4 id="modalTitle">Variants</h4>
-      <button id="modalClose" class="close">Close</button>
+      <div class="row">
+        <select id="modalSort">
+          <option value="price_asc">Price: Low → High</option>
+          <option value="price_desc">Price: High → Low</option>
+          <option value="alpha">Alphabetical</option>
+        </select>
+        <button id="modalClose" class="close">Close</button>
+      </div>
     </header>
     <div class="body">
       <table>
@@ -134,6 +172,7 @@
 <script>
 /* DOM refs */
 const elQ = document.getElementById('q');
+const elSort = document.getElementById('sort');
 const elSections = document.getElementById('sections');
 const elReload = document.getElementById('reload');
 const elErr = document.getElementById('err');
@@ -145,48 +184,27 @@ const elToggleView = document.getElementById('toggleView');
 const modalWrap = document.getElementById('modalWrap');
 const modalClose = document.getElementById('modalClose');
 const modalTitle = document.getElementById('modalTitle');
+const modalSort = document.getElementById('modalSort');
 const variantRows = document.getElementById('variantRows');
 
 /* state */
 let ALL_SERVICES = [];
 let COLLAPSED = new Set();
-let SHOW_VARIANTS_INLINE = false; // default to collapsed variant view
+let SHOW_VARIANTS_INLINE = false; // default collapsed
+let currentModalMeta = null;
 
-/* ===== ICONS ===== */
+/* ===== ICONS / COLORS / RULES (same as before) ===== */
 const ICON_PATHS = {
-  instagram:'instagram.svg',
-  tiktok:'tiktok.svg',
-  youtube:'youtube.svg',
-  facebook:'facebook.svg',
-  twitter:'specialtwitter.svg',
-  telegram:'telegram.svg',
-  spotify:'spotify.svg',
-  threads:'threads.svg',
-  soundcloud:'soundcloud.svg',
-  pinterest:'pinterest.svg',
-  reddit:'reddit.svg',
-  linkedin:'linkedin.svg',
-  twitch:'twitch.svg',
-  vk:'vkontakte.svg',
-  okru:'okru.svg',
-  audiomack:'audiomack.svg',
-  reverbnation:'reverbnation.svg',
-  tidal:'tidal.svg',
-  shazam:'shazam.svg',
-  dailymotion:'dailymotion.svg',
-  datpiff:'datpiff.svg',
-  mixcloud:'mixcloud.svg',
-  rumble:'rumble.svg',
-  imdb:'imdb.svg',
-  maskedtraffic:'maskedtraffic.svg',
-  websitepremium:'websitepremium.svg',
-  webtraffic:'webtraffic.svg',
-  webtrafficgeo:'webtraffic.svg',
-  ownwebsite:'onwebsite.svg',
+  instagram:'instagram.svg', tiktok:'tiktok.svg', youtube:'youtube.svg', facebook:'facebook.svg',
+  twitter:'specialtwitter.svg', telegram:'telegram.svg', spotify:'spotify.svg', threads:'threads.svg',
+  soundcloud:'soundcloud.svg', pinterest:'pinterest.svg', reddit:'reddit.svg', linkedin:'linkedin.svg',
+  twitch:'twitch.svg', vk:'vkontakte.svg', okru:'okru.svg', audiomack:'audiomack.svg', reverbnation:'reverbnation.svg',
+  tidal:'tidal.svg', shazam:'shazam.svg', dailymotion:'dailymotion.svg', datpiff:'datpiff.svg',
+  mixcloud:'mixcloud.svg', rumble:'rumble.svg', imdb:'imdb.svg',
+  maskedtraffic:'maskedtraffic.svg', websitepremium:'websitepremium.svg',
+  webtraffic:'webtraffic.svg', webtrafficgeo:'webtraffic.svg', ownwebsite:'ownwebsite.svg',
   other:'other.svg'
 };
-
-/* platform accent colors */
 const PLATFORM_ACCENTS = {
   instagram:'#e1306c', youtube:'#ff0033', tiktok:'#29bdb1', facebook:'#1877f2',
   twitter:'#1d9bf0', spotify:'#1db954', telegram:'#2aabee', threads:'#ffffff',
@@ -197,157 +215,88 @@ const PLATFORM_ACCENTS = {
   websitepremium:'#a78bfa', webtraffic:'#8b5cf6', webtrafficgeo:'#8b5cf6', ownwebsite:'#8b5cf6',
   other:'#8b5cf6'
 };
-
-/* ===== PLATFORM RULES ===== */
 const PLATFORM_RULES = [
-  {slug:'instagram',re:/\binstagram\b/i},
-  {slug:'tiktok',re:/\btik\s*tok\b|\btiktok\b/i},
-  {slug:'youtube',re:/\byou\s*tube\b|\byoutube\b/i},
-  {slug:'facebook',re:/\bfacebook\b|\bfb\b/i},
-  {slug:'telegram',re:/\btelegram\b/i},
-  {slug:'twitter',re:/\btwitter\b/i},
-  {slug:'spotify',re:/\bspotify\b/i},
-  {slug:'threads',re:/\bthreads\b/i},
-  {slug:'soundcloud',re:/\bsound\s*cloud\b|\bsoundcloud\b/i},
-  {slug:'pinterest',re:/\bpint?erest\b/i},
-  {slug:'reddit',re:/\breddit\b/i},
-  {slug:'linkedin',re:/\blinked?in\b/i},
-  {slug:'twitch',re:/\btwitch\b/i},
-  {slug:'vk',re:/\bvk(?:ontakte)?\b/i},
-  {slug:'okru',re:/\bok\.?ru\b|\bokru\b/i},
-  {slug:'audiomack',re:/\baudio\s*mack\b/i},
-  {slug:'reverbnation',re:/\breverb\s*nation\b/i},
-  {slug:'tidal',re:/\btidal\b/i},
-  {slug:'shazam',re:/\bshazam\b/i},
-  {slug:'dailymotion',re:/\bdaily\s*motion\b/i},
-  {slug:'datpiff',re:/\bdatpiff\b/i},
-  {slug:'mixcloud',re:/\bmixcloud\b/i},
-  {slug:'rumble',re:/\brumble\b/i},
+  {slug:'instagram',re:/\binstagram\b/i},{slug:'tiktok',re:/\btik\s*tok\b|\btiktok\b/i},
+  {slug:'youtube',re:/\byou\s*tube\b|\byoutube\b/i},{slug:'facebook',re:/\bfacebook\b|\bfb\b/i},
+  {slug:'telegram',re:/\btelegram\b/i},{slug:'twitter',re:/\btwitter\b/i},{slug:'spotify',re:/\bspotify\b/i},
+  {slug:'threads',re:/\bthreads\b/i},{slug:'soundcloud',re:/\bsound\s*cloud\b|\bsoundcloud\b/i},
+  {slug:'pinterest',re:/\bpint?erest\b/i},{slug:'reddit',re:/\breddit\b/i},{slug:'linkedin',re:/\blinked?in\b/i},
+  {slug:'twitch',re:/\btwitch\b/i},{slug:'vk',re:/\bvk(?:ontakte)?\b/i},{slug:'okru',re:/\bok\.?ru\b|\bokru\b/i},
+  {slug:'audiomack',re:/\baudio\s*mack\b/i},{slug:'reverbnation',re:/\breverb\s*nation\b/i},
+  {slug:'tidal',re:/\btidal\b/i},{slug:'shazam',re:/\bshazam\b/i},{slug:'dailymotion',re:/\bdaily\s*motion\b/i},
+  {slug:'datpiff',re:/\bdatpiff\b/i},{slug:'mixcloud',re:/\bmixcloud\b/i},{slug:'rumble',re:/\brumble\b/i},
   {slug:'imdb',re:/\bimdb\b/i},
-  {slug:'maskedtraffic',re:/\bmasked\b.*\btraffic\b/i},
-  {slug:'websitepremium',re:/\bwebsite\b.*\bpremium\b/i},
-  {slug:'webtrafficgeo',re:/\bweb\b.*\bgeo\b.*\btraffic\b/i},
-  {slug:'webtraffic',re:/\bweb\b.*\btraffic\b/i},
+  {slug:'maskedtraffic',re:/\bmasked\b.*\btraffic\b/i},{slug:'websitepremium',re:/\bwebsite\b.*\bpremium\b/i},
+  {slug:'webtrafficgeo',re:/\bweb\b.*\bgeo\b.*\btraffic\b/i},{slug:'webtraffic',re:/\bweb\b.*\btraffic\b/i},
   {slug:'ownwebsite',re:/\bown\b.*\bwebsite\b/i},
 ];
-
-function getPlatformSlug(text=''){
-  const t = String(text||'').toLowerCase();
-  for(const rule of PLATFORM_RULES){ if(rule.re.test(t)) return rule.slug; }
-  return 'other';
-}
+function getPlatformSlug(text=''){const t=String(text||'').toLowerCase();for(const r of PLATFORM_RULES){if(r.re.test(t))return r.slug}return'other'}
 function slugLabel(slug){
   const map={okru:'OK.ru',vk:'VK',soundcloud:'SoundCloud',reverbnation:'ReverbNation',
-             datpiff:'DatPiff',webtraffic:'Web Traffic',webtrafficgeo:'Web Traffic (Geo)',
-             websitepremium:'Website Premium',maskedtraffic:'Masked Traffic',ownwebsite:'Own Website'};
-  return map[slug] || slug.charAt(0).toUpperCase()+slug.slice(1);
+    datpiff:'DatPiff',webtraffic:'Web Traffic',webtrafficgeo:'Web Traffic (Geo)',
+    websitepremium:'Website Premium',maskedtraffic:'Masked Traffic',ownwebsite:'Own Website'};
+  return map[slug]||slug.charAt(0).toUpperCase()+slug.slice(1);
 }
 
-/* ===== TITLE CLEANUP ===== */
+/* -------- title & product -------- */
 const PRODUCT_WORDS=['Followers','Likes','Views','Comments','Subscribers','Saves','Story Views','Impressions','Shares','Plays','Streams','Downloads','Members','Votes','Service'];
-
-function cleanNoise(str=''){
-  return String(str)
-    .replace(/\[.*?\]/g,' ')
-    .replace(/% ?\d{2,3}|%100/gi,' ')
-    .replace(/\bWORKING AFTER UPDATE\b/gi,' ')
-    .replace(/\bProvider Service\b/gi,' ')
-    .replace(/\bR\d+\b/g,' ')
-    .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
-    .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ')
-    .replace(/\s+/g,' ')
-    .trim();
-}
+function cleanNoise(str=''){return String(str).replace(/\[.*?\]/g,' ').replace(/% ?\d{2,3}|%100/gi,' ')
+  .replace(/\bWORKING AFTER UPDATE\b/gi,' ').replace(/\bProvider Service\b/gi,' ')
+  .replace(/\bR\d+\b/g,' ').replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
+  .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ').replace(/\s+/g,' ').trim()}
 function extractProduct(name='',cat=''){
   const hay=`${name} ${cat}`.toLowerCase();
-  for(const w of PRODUCT_WORDS){
-    const re=new RegExp(`\\b${w.toLowerCase().replace(/\s+/g,'\\s*')}\\b`,'i');
-    if(re.test(hay)) return w;
-  }
-  if(/follow/i.test(hay)) return 'Followers';
-  if(/like/i.test(hay)) return 'Likes';
-  if(/view/i.test(hay)) return 'Views';
-  if(/comment/i.test(hay)) return 'Comments';
-  if(/sub/i.test(hay)) return 'Subscribers';
-  if(/save/i.test(hay)) return 'Saves';
-  if(/impression/i.test(hay)) return 'Impressions';
-  if(/share/i.test(hay)) return 'Shares';
-  if(/play|stream/i.test(hay)) return 'Plays';
-  if(/download/i.test(hay)) return 'Downloads';
-  return 'Service';
+  for(const w of PRODUCT_WORDS){const re=new RegExp(`\\b${w.toLowerCase().replace(/\s+/g,'\\s*')}\\b`,'i');if(re.test(hay)) return w;}
+  if(/follow/i.test(hay))return'Followers'; if(/like/i.test(hay))return'Likes'; if(/view/i.test(hay))return'Views';
+  if(/comment/i.test(hay))return'Comments'; if(/sub/i.test(hay))return'Subscribers'; if(/save/i.test(hay))return'Saves';
+  if(/impression/i.test(hay))return'Impressions'; if(/share/i.test(hay))return'Shares'; if(/play|stream/i.test(hay))return'Plays';
+  if(/download/i.test(hay))return'Downloads'; return'Service';
 }
-function prettyTitle(svc){
-  const slug=getPlatformSlug(svc.category||svc.name||'other');
-  const platform=slugLabel(slug);
-  const product=extractProduct(cleanNoise(svc.name||''), svc.category||'');
-  return `${platform} ${product}`;
-}
+function prettyTitle(svc){const slug=getPlatformSlug(svc.category||svc.name||'other');const platform=slugLabel(slug);const product=extractProduct(cleanNoise(svc.name||''), svc.category||'');return `${platform} ${product}`}
 
-/* ===== DEDUPE (keeps variants) ===== */
-function mildClean(str=''){
-  return String(str)
-    .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
-    .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ')
-    .replace(/\s+/g,' ')
-    .trim()
-    .toLowerCase();
-}
-function dedupeKey(s){
-  const plat=getPlatformSlug(s.category||s.name||'');
-  const prod=extractProduct(s.name||'', s.category||'');
-  const title=mildClean(cleanNoise(s.name||s.title||''));
-  const mmpp=`${s.min}|${s.max}|${s.price_per_1k}`;
-  return `${plat}|${prod}|${title}|${mmpp}`;
-}
-function uniqueServices(list){
-  const seen=new Set();
-  return list.filter(s=>{const k=dedupeKey(s);if(seen.has(k))return false;seen.add(k);return true;});
-}
+/* -------- dedupe -------- */
+function mildClean(str=''){return String(str).replace(/\d{2}\.\d{2}\.\d{4}/g,' ').replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ').replace(/\s+/g,' ').trim().toLowerCase()}
+function dedupeKey(s){const plat=getPlatformSlug(s.category||s.name||'');const prod=extractProduct(s.name||'', s.category||'');const title=mildClean(cleanNoise(s.name||s.title||''));const mmpp=`${s.min}|${s.max}|${s.price_per_1k}`;return `${plat}|${prod}|${title}|${mmpp}`}
+function uniqueServices(list){const seen=new Set();return list.filter(s=>{const k=dedupeKey(s);if(seen.has(k))return false;seen.add(k);return true;});}
 
-/* ===== CHIPS ===== */
-const COUNTRY_WORDS = [
-  'usa','uk','germany','france','italy','spain','canada','brazil','india','japan','korea','korean',
-  'turkey','mexico','australia','russia','uae','saudi','indonesia','vietnam','thailand','philippines'
-];
+/* -------- chips -------- */
+const COUNTRY_WORDS=['usa','uk','germany','france','italy','spain','canada','brazil','india','japan','korea','korean','turkey','mexico','australia','russia','uae','saudi','indonesia','vietnam','thailand','philippines'];
 function chipListForName(name){
-  const n = (name||'').toLowerCase();
-  const out = [];
-  if (/ultra\s*hq|premium/.test(n)) out.push('Premium');
-  if (/\bhq\b|high\s*quality/.test(n)) out.push('HQ');
-  if (/fast|instant|speed/i.test(n)) out.push('Fast');
-  if (/cheapest|cheap/i.test(n)) out.push('Cheapest');
-  if (/old\s*accounts?/i.test(n)) out.push('Old Accounts');
-  if (/verified/i.test(n)) out.push('Verified');
-  if (/real\b/.test(n)) out.push('Real');
-  if (/\bgeo\b/i.test(n)) out.push('Geo');
-  for (const c of COUNTRY_WORDS){ if (n.includes(c)) { out.push(c.toUpperCase()); break; } }
+  const n=(name||'').toLowerCase(); const out=[];
+  if(/ultra\s*hq|premium/.test(n)) out.push({t:'Premium',c:'qual'});
+  if(/\bhq\b|high\s*quality/.test(n)) out.push({t:'HQ',c:'qual'});
+  if(/fast|instant|speed/i.test(n)) out.push({t:'Fast',c:'fast'});
+  if(/cheapest|cheap/i.test(n)) out.push({t:'Cheapest',c:'fast'});
+  if(/old\s*accounts?/i.test(n)) out.push({t:'Old Accounts',c:'qual'});
+  if(/verified/i.test(n)) out.push({t:'Verified',c:'qual'});
+  if(/\breal\b/.test(n)) out.push({t:'Real',c:'qual'});
+  if(/\bgeo\b/i.test(n)) out.push({t:'GEO',c:'geo'});
+  let country=null; for(const c of COUNTRY_WORDS){ if(n.includes(c)){ country=c.toUpperCase(); break; } }
+  if(country) out.push({t:country,c:'country'});
   return out;
 }
 function renderQualChips(s){
-  const chips = [];
-  if (s.min) chips.push(`Min ${s.min}`);
-  if (s.max) chips.push(`Max ${s.max}`);
-  if (s.dripfeed) chips.push('Dripfeed');
-  if (s.refill) chips.push('Refill');
-  return chips.concat(chipListForName(s.name)).map(t=>`<span class="pill">${t}</span>`);
+  const chips=[];
+  if (s.min) chips.push({t:`Min ${s.min}`});
+  if (s.max) chips.push({t:`Max ${Number(s.max).toLocaleString()}`});
+  if (s.dripfeed) chips.push({t:'Dripfeed',c:'fast'});
+  if (s.refill) chips.push({t:'Refill',c:'refill'});
+  chips.push(...chipListForName(s.name));
+  return chips.map(ch=>`<span class="pill ${ch.c||''}">${ch.t}</span>`);
 }
-function accentFor(svc){
-  const slug = getPlatformSlug(svc.category || svc.name || '');
-  return PLATFORM_ACCENTS[slug] || PLATFORM_ACCENTS.other;
-}
+function accentFor(svc){const slug=getPlatformSlug(svc.category||svc.name||'');return PLATFORM_ACCENTS[slug]||PLATFORM_ACCENTS.other}
 
-/* ===== FETCH ===== */
+/* -------- fetch -------- */
 async function fetchServices(){
   try{
-    const res=await fetch('/api/services');
-    if(!res.ok) throw new Error(`API ${res.status}`);
+    const res=await fetch('/api/services'); if(!res.ok) throw new Error(`API ${res.status}`);
     const data=await res.json();
     ALL_SERVICES=uniqueServices(Array.isArray(data)?data:[]);
     render();
   }catch(err){elErr.textContent='Load error: '+(err?.message||err);}
 }
 
-/* ===== GROUPING ===== */
+/* -------- grouping & sorting -------- */
 function groupByPlatform(services, query=''){
   const out=new Map();
   services.forEach(s=>{
@@ -359,8 +308,6 @@ function groupByPlatform(services, query=''){
   });
   return out;
 }
-
-/* group into BASE = Platform + Product; variants = services */
 function groupIntoBases(services){
   const bases = new Map();
   for (const s of services){
@@ -372,10 +319,29 @@ function groupIntoBases(services){
   }
   return bases;
 }
+function cheapestOf(arr){return arr.reduce((a,b)=>(a?.price_per_1k??Infinity) <= (b?.price_per_1k??Infinity) ? a : b, null)}
+function cmpPriceAsc(a,b){return (a?.price_per_1k??Infinity)-(b?.price_per_1k??Infinity)}
+function cmpPriceDesc(a,b){return (b?.price_per_1k??-Infinity)-(a?.price_per_1k??-Infinity)}
+function sortServices(list, mode){
+  if(mode==='alpha') return [...list].sort((a,b)=>prettyTitle(a).localeCompare(prettyTitle(b)));
+  if(mode==='price_desc') return [...list].sort(cmpPriceDesc);
+  return [...list].sort(cmpPriceAsc); // default asc
+}
+function sortBasesByCheapest(bases, mode){
+  const arr=[...bases.values()];
+  const cmp=(x,y)=>{
+    const cx=cheapestOf(x.items), cy=cheapestOf(y.items);
+    if(mode==='alpha') return `${slugLabel(x.slug)} ${x.product}`.localeCompare(`${slugLabel(y.slug)} ${y.product}`);
+    if(mode==='price_desc') return cmpPriceDesc(cx,cy);
+    return cmpPriceAsc(cx,cy);
+  };
+  return arr.sort(cmp);
+}
 
-/* ===== RENDER ===== */
+/* -------- render -------- */
 function render(){
   const q=(elQ.value||'').toLowerCase();
+  const mode=elSort.value;
   const platformGroups=groupByPlatform(ALL_SERVICES,q);
 
   const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','pinterest','reddit','linkedin','twitch','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
@@ -390,22 +356,28 @@ function render(){
 
   elSections.innerHTML='';
   for(const slug of ordered){
-    const services=platformGroups.get(slug);
+    let services=platformGroups.get(slug);
     if(!services || !services.length) continue;
 
     const section=document.createElement('section');
     section.className='section'+(COLLAPSED.has(slug)?' collapsed':'');
     section.dataset.slug=slug;
 
-    const bodyHtml = SHOW_VARIANTS_INLINE
-      ? `<div class="grid">${services.map(cardHtmlFlat).join('')}</div>`
-      : renderGroupedCards(services);
+    let bodyHtml='';
+    if (SHOW_VARIANTS_INLINE){
+      services = sortServices(services, mode);
+      bodyHtml = `<div class="grid">${services.map(cardHtmlFlat).join('')}</div>`;
+    } else {
+      const bases = groupIntoBases(services);
+      const sortedBases = sortBasesByCheapest(bases, mode);
+      bodyHtml = renderGroupedCardsSorted(sortedBases);
+    }
 
     section.innerHTML=`
       <div class="section-header">
         <img src="/icons/${ICON_PATHS[slug]||ICON_PATHS.other}" alt="">
         <div class="section-title">${slugLabel(slug)}</div>
-        <div class="section-meta">${services.length.toLocaleString()} ${SHOW_VARIANTS_INLINE?'items':'services'} </div>
+        <div class="section-meta">${services.length.toLocaleString()} ${SHOW_VARIANTS_INLINE?'items':'services'}</div>
         <div class="chev">▾</div>
       </div>
       <div class="section-body" style="${COLLAPSED.has(slug)?'display:none':''}">
@@ -423,18 +395,15 @@ function render(){
   }
 }
 
-/* --------- FLAT CARD (old view) ---------- */
+/* flat card */
 function cardHtmlFlat(s){
   const titleText=prettyTitle(s);
   const price=(typeof s.price_per_1k==='number'&&isFinite(s.price_per_1k))?`$${s.price_per_1k.toFixed(2)}`:'-';
   const ring = accentFor(s) + '55';
   return `
-    <div class="card" style="--ring:${ring}">
+    <div class="card" style="--ring:${ring}" tabindex="0">
       <h3><span class="brand">[DropSource]</span> — ${escapeHtml(titleText)}</h3>
-      <div class="muted">${s.max?`Max ${Number(s.max).toLocaleString()}`:''}</div>
-      <div class="row" style="margin:10px 0 12px">
-        ${renderQualChips(s).join('')}
-      </div>
+      <div class="row" style="margin:10px 0 12px">${renderQualChips(s).join('')}</div>
       <div class="row" style="justify-content:flex-end">
         <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
       </div>
@@ -443,20 +412,21 @@ function cardHtmlFlat(s){
   `;
 }
 
-/* --------- GROUPED CARDS (collapsed variants) ---------- */
-function renderGroupedCards(services){
-  const bases = groupIntoBases(services);
-  const cards = [];
-  for (const {slug, product, items} of bases.values()){
-    // cheapest price shown on tile
-    const cheapest = items.reduce((a,b)=>(a?.price_per_1k||Infinity) < (b?.price_per_1k||Infinity) ? a : b, null);
+/* grouped cards */
+function renderGroupedCardsSorted(sortedBases){
+  const cards=[];
+  for (const base of sortedBases){
+    const {slug, product, items}=base;
+    // modal list sort follows global sort
+    const mode=elSort.value;
+    const sortedItems = sortServices(items, mode);
+    const cheapest = sortedItems[0];
     const ring = (PLATFORM_ACCENTS[slug] || PLATFORM_ACCENTS.other) + '55';
     const title = `${slugLabel(slug)} ${product}`;
     const count = items.length;
-    const chips = summarizeVariantChips(items).map(t=>`<span class="pill">${t}</span>`).join('');
-
+    const chips = summarizeVariantChips(sortedItems).map(t=>`<span class="pill ${t.c||''}">${t.t}</span>`).join('');
     cards.push(`
-      <div class="card" style="--ring:${ring}">
+      <div class="card" style="--ring:${ring}" tabindex="0">
         <h3><span class="brand">[DropSource]</span> — ${escapeHtml(title)}</h3>
         <div class="muted">${count} variant${count>1?'s':''} available</div>
         <div class="row" style="margin:10px 0 12px">${chips}</div>
@@ -470,52 +440,67 @@ function renderGroupedCards(services){
   }
   return `<div class="grid">${cards.join('')}</div>`;
 }
-
 function summarizeVariantChips(items){
-  // make a compact overview across variants (e.g., HQ, Fast, Refill, Geo, USA)
-  const tags = new Set();
+  const tags = new Map(); // text -> class
   let minMin = Infinity, maxMax = 0;
   for (const s of items){
     minMin = Math.min(minMin, s.min||Infinity);
     maxMax = Math.max(maxMax, s.max||0);
-    for (const t of chipListForName(s.name)) tags.add(t);
-    if (s.refill) tags.add('Refill');
-    if (s.dripfeed) tags.add('Dripfeed');
+    for (const t of chipListForName(s.name)){
+      if (!tags.has(t.t)) tags.set(t.t, t.c||'');
+    }
+    if (s.refill) tags.set('Refill','refill');
+    if (s.dripfeed) tags.set('Dripfeed','fast');
   }
   const out = [];
-  if (isFinite(minMin)) out.push(`Min ${minMin}`);
-  if (maxMax>0) out.push(`Max ${maxMax.toLocaleString()}`);
-  // cap at ~6 chips so it doesn’t get nuts
-  for (const t of tags){ if (out.length>=6) break; out.push(t); }
+  if (isFinite(minMin)) out.push({t:`Min ${minMin}`});
+  if (maxMax>0) out.push({t:`Max ${maxMax.toLocaleString()}`});
+  // prefer GEO/country visibility first
+  for (const [t,c] of tags){
+    if (c==='geo' || c==='country') out.push({t,c});
+    if (out.length>=6) break;
+  }
+  for (const [t,c] of tags){
+    if (c==='geo' || c==='country') continue;
+    if (out.length>=6) break;
+    out.push({t,c});
+  }
   return out;
 }
 
-/* ===== MODAL ===== */
+/* modal */
 function priceFmt(s){ return (typeof s?.price_per_1k==='number' && isFinite(s.price_per_1k)) ? `$${s.price_per_1k.toFixed(2)}` : '-'; }
 
 function openVariants(meta){
-  // meta: {title, slug}
-  const {title, slug} = meta||{};
+  currentModalMeta = meta;
+  renderModal();
+  modalWrap.style.display='flex';
+}
+function renderModal(){
+  const {title, slug} = currentModalMeta||{};
   modalTitle.textContent = title || 'Variants';
   variantRows.innerHTML = '';
 
-  // gather variants for this base
-  const baseItems = ALL_SERVICES.filter(s=>{
-    const sl = getPlatformSlug(s.category||s.name||'');
-    return sl===slug && extractProduct(s.name||'', s.category||'') && (`${slugLabel(sl)} ${extractProduct(s.name||'', s.category||'')}` === title);
-  });
-
-  // fallback: if the stricter match found nothing (edge cases), match by slug + product only
+  // find variants
   const product = (title||'').split(' ').slice(1).join(' ');
-  const variants = baseItems.length ? baseItems : ALL_SERVICES.filter(s=>getPlatformSlug(s.category||s.name||'')===slug && extractProduct(s.name||'', s.category||'')===product);
+  let variants = ALL_SERVICES.filter(s=>getPlatformSlug(s.category||s.name||'')===slug && extractProduct(s.name||'', s.category||'')===product);
+
+  // sort per modal sort
+  const mode = modalSort.value;
+  variants = sortServices(variants, mode);
 
   for (const s of variants){
     const cleaned = cleanNoise(s.name||s.title||'');
-    const chips = renderQualChips(s).map(x=>x.replace('class="pill"','class="chip"')).join('');
+    // tag classes
+    const chipHtml = chipListForName(s.name).map(x=>{
+      const cls = (x.c==='geo'?'chip geo': x.c==='country'?'chip country':'chip');
+      return `<span class="${cls}">${x.t}</span>`;
+    }).join('');
+    const mm = `<div class="chipline">${chipHtml}${s.refill?'<span class="chip">Refill</span>':''}${s.dripfeed?'<span class="chip">Dripfeed</span>':''}</div>`;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(cleaned)}</td>
-      <td><div class="chipline">${chips}</div></td>
+      <td>${mm}</td>
       <td>${s.min ?? ''}</td>
       <td>${s.max ? Number(s.max).toLocaleString() : ''}</td>
       <td>${priceFmt(s)}</td>
@@ -523,13 +508,12 @@ function openVariants(meta){
     `;
     variantRows.appendChild(tr);
   }
-
-  modalWrap.style.display='flex';
 }
 modalClose.addEventListener('click', ()=> modalWrap.style.display='none');
 modalWrap.addEventListener('click', (e)=>{ if(e.target===modalWrap) modalWrap.style.display='none'; });
+modalSort.addEventListener('change', renderModal);
 
-/* --------- utils --------- */
+/* utils */
 function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
 async function placeOrder(id,link,qty,runs,interval){const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:id,link,quantity:qty,runs,interval})});return res.json();}
 function openOrder(svc){
@@ -544,17 +528,14 @@ function openOrder(svc){
 
 /* events */
 elQ.addEventListener('input', render);
+elSort.addEventListener('change', render);
 elReload.addEventListener('click', fetchServices);
 elExpandAll.addEventListener('click', ()=>{ COLLAPSED.clear(); render(); });
 elCollapseAll.addEventListener('click', ()=>{
   const slugs=[...document.querySelectorAll('.section')].map(s=>s.dataset.slug);
   COLLAPSED=new Set(slugs); render();
 });
-elShowAll.addEventListener('click', ()=>{
-  elQ.value = '';
-  COLLAPSED.clear();
-  render();
-});
+elShowAll.addEventListener('click', ()=>{ elQ.value=''; COLLAPSED.clear(); render(); });
 elToggleView.addEventListener('click', ()=>{
   SHOW_VARIANTS_INLINE = !SHOW_VARIANTS_INLINE;
   elToggleView.textContent = SHOW_VARIANTS_INLINE ? 'Collapse variants' : 'Show variants inline';
