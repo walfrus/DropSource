@@ -316,7 +316,7 @@ function dedupeKey(s){
 
 async function load(){
   try{
-    const res=await fetch('/api/services');
+    const res=await fetch('/api/smm');
     if(!res.ok) throw new Error(`API ${res.status}`);
     const data=await res.json();
     const arr=Array.isArray(data)?data:[];
