@@ -45,6 +45,7 @@
   <div class="footer">Powered by <span class="brand">DropSource</span> • your growth plug, but like… responsibly ✌️</div>
 
 <script>
+const API = '/api/smm';
 const elQ = document.getElementById('q');
 const elCat = document.getElementById('cat');
 const elGrid = document.getElementById('services');
@@ -154,7 +155,7 @@ function parseTags(s=''){
 async function fetchServices() {
   const q = encodeURIComponent(elQ.value || '');
   const cat = encodeURIComponent(elCat.value || '');
-  const url = `/api/services?${q ? 'q='+q+'&' : ''}${cat ? 'category='+cat : ''}`;
+  const url = `${API}?action=services${q ? `&q=${q}` : ''}${cat ? `&category=${cat}` : ''}`;
   const res = await fetch(url);
   const data = await res.json();
   renderServices(data);
@@ -218,10 +219,11 @@ function shade(hex, amt){
 
 /* -------------------- ORDER FLOW -------------------- */
 async function placeOrder(serviceId, link, quantity, runs, interval) {
-  const res = await fetch('/api/order', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ service: serviceId, link, quantity, runs, interval })
-  });
+  const res = await fetch(API, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action: 'add', service: serviceId, link, quantity, runs, interval }),
+});
   return res.json();
 }
 function openOrder(svc){
