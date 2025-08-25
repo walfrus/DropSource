@@ -8,6 +8,7 @@
   :root{
     --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3;
     --brand:#59a0ff; --accent:#8b5cf6; --rule:#26282d;
+    --grad-1:#2a2b45; --grad-2:#1c1d31;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
@@ -22,10 +23,10 @@
   .ghost img.ico{width:14px;height:14px;margin-right:6px;vertical-align:middle}
 
   /* sections */
-  .section{border:1px solid #24262c;border-radius:14px;overflow:hidden;margin-bottom:14px;background:#121319}
+  .section{border:none;border-radius:14px;overflow:hidden;margin-bottom:16px;background:transparent}
   .section-header{
     display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;
-    background:linear-gradient(180deg,#161821,#121319); border-bottom:1px solid #1f2128;
+    background:linear-gradient(180deg,#1a1b2a,#141524); border:1px solid #26273a;border-radius:14px;
   }
   .section-header img{width:18px;height:18px}
   .section-title{font-weight:600}
@@ -33,17 +34,34 @@
   .chev{transition:.15s transform}
   .collapsed .chev{transform:rotate(-90deg)}
   .section-body{padding:12px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 
-  /* cards */
-  .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
-  .card h3{margin:0 0 6px 0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* cards — DropSource style */
+  .card{
+    position:relative;border-radius:18px;padding:18px 16px 52px;
+    background: radial-gradient(120% 140% at 100% 0%, var(--grad-1) 0%, var(--grad-2) 60%);
+    border:1px solid #2b2d3d;
+    box-shadow:0 0 0 1px rgba(255,255,255,.02) inset, 0 8px 20px rgba(0,0,0,.35);
+    transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease;
+  }
+  .card:hover{
+    transform:translateY(-2px);
+    border-color:#3a3d57;
+    box-shadow:0 0 0 1px rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45), 0 0 0 3px var(--ring, rgba(139,92,246,.35));
+  }
+  .card h3{margin:0 0 8px 0;font-size:15px;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .muted{color:var(--muted)}
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
+  .pill{padding:3px 8px;border-radius:999px;background:#1b1c2a;border:1px solid #2b2d3d;color:#c8cbe6;font-size:12px}
   .brand{color:var(--brand)}
-  .price strong{font-weight:700;color:var(--accent);text-shadow:0 0 10px rgba(139,92,246,.15)}
-  .price .per{color:var(--muted)}
+
+  /* price badge */
+  .price-badge{
+    position:absolute;left:14px;bottom:12px;padding:6px 10px;border-radius:10px;
+    background:#0f1020;border:1px solid #343654;font-weight:700;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);
+  }
+  .price-badge .per{color:var(--muted);font-weight:500;margin-left:4px}
 
   .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
   #err{margin-top:12px;color:#ff6b6b;font-size:12px}
@@ -60,9 +78,7 @@
 
 <div class="container">
   <div class="toolbar">
-    <button id="showAll" class="ghost">
-      <img src="/icons/star.svg" class="ico" alt=""> All products
-    </button>
+    <button id="showAll" class="ghost"><img src="/icons/allproducts.svg" class="ico" alt=""> All products</button>
     <button id="expandAll" class="ghost">Expand all</button>
     <button id="collapseAll" class="ghost">Collapse all</button>
     <span class="count" id="totalCount"></span>
@@ -74,6 +90,7 @@
 <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
 
 <script>
+/* DOM refs */
 const elQ = document.getElementById('q');
 const elSections = document.getElementById('sections');
 const elReload = document.getElementById('reload');
@@ -83,10 +100,11 @@ const elExpandAll = document.getElementById('expandAll');
 const elCollapseAll = document.getElementById('collapseAll');
 const elShowAll = document.getElementById('showAll');
 
+/* state */
 let ALL_SERVICES = [];
-let COLLAPSED = new Set(); // section slugs that are collapsed
+let COLLAPSED = new Set();
 
-/* ===== ICONS (edit filenames to match /public/icons) ===== */
+/* ===== ICONS (match /public/icons) ===== */
 const ICON_PATHS = {
   instagram:'instagram.svg',
   tiktok:'tiktok.svg',
@@ -96,8 +114,8 @@ const ICON_PATHS = {
   telegram:'telegram.svg',
   spotify:'spotify.svg',
   threads:'threads.svg',
-  soundcloud:'soundcloud.svg',  // adjust if you renamed
-  pinterest:'pinterest.svg',                 // adjust if you renamed
+  soundcloud:'soundcloud.svg',
+  pinterest:'pinterest.svg',
   reddit:'reddit.svg',
   linkedin:'linkedin.svg',
   twitch:'twitch.svg',
@@ -120,8 +138,20 @@ const ICON_PATHS = {
   webtrafficgeo:'webtraffic.svg',
   ownwebsite:'ownwebsite.svg',
 
-  /* fallback for categories we don’t recognize */
-  other:'other.svg'  // ← change this to swap the "Other" icon
+  /* fallback */
+  other:'other.svg'
+};
+
+/* platform accent colors for the hover ring */
+const PLATFORM_ACCENTS = {
+  instagram:'#e1306c', youtube:'#ff0033', tiktok:'#29bdb1', facebook:'#1877f2',
+  twitter:'#1d9bf0', spotify:'#1db954', telegram:'#2aabee', threads:'#ffffff',
+  soundcloud:'#ff5500', pinterest:'#e60023', reddit:'#ff4500', linkedin:'#0a66c2',
+  twitch:'#9146ff', vk:'#4c75a3', okru:'#ed812b', audiomack:'#f2a900', reverbnation:'#e31e24',
+  tidal:'#0a0a0a', shazam:'#08f', dailymotion:'#0066dc', datpiff:'#86c232',
+  mixcloud:'#52aad8', rumble:'#85c742', imdb:'#f5c518', maskedtraffic:'#8b5cf6',
+  websitepremium:'#a78bfa', webtraffic:'#8b5cf6', webtrafficgeo:'#8b5cf6', ownwebsite:'#8b5cf6',
+  other:'#8b5cf6'
 };
 
 /* ===== PLATFORM RULES ===== */
@@ -176,13 +206,13 @@ const PRODUCT_WORDS=['Followers','Likes','Views','Comments','Subscribers','Saves
 
 function cleanNoise(str=''){
   return String(str)
-    .replace(/\[.*?\]/g,' ')                  // remove bracket noise
-    .replace(/% ?\d{2,3}|%100/gi,' ')         // %100 etc
+    .replace(/\[.*?\]/g,' ')
+    .replace(/% ?\d{2,3}|%100/gi,' ')
     .replace(/\bWORKING AFTER UPDATE\b/gi,' ')
     .replace(/\bProvider Service\b/gi,' ')
     .replace(/\bR\d+\b/g,' ')
-    .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')      // dates
-    .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ') // emojis/symbols
+    .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
+    .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ')
     .replace(/\s+/g,' ')
     .trim();
 }
@@ -211,7 +241,7 @@ function prettyTitle(svc){
   return `${platform} ${product}`;
 }
 
-/* ===== CONSERVATIVE DEDUPE (keeps variants) ===== */
+/* ===== DEDUPE (keeps variants) ===== */
 function mildClean(str=''){
   return String(str)
     .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
@@ -224,12 +254,40 @@ function dedupeKey(s){
   const plat=getPlatformSlug(s.category||s.name||'');
   const prod=extractProduct(s.name||'', s.category||'');
   const title=mildClean(cleanNoise(s.name||s.title||''));
-  const mmpp=`${s.min}|${s.max}|${s.price_per_1k}`; // identical stock/price = true dupes
+  const mmpp=`${s.min}|${s.max}|${s.price_per_1k}`;
   return `${plat}|${prod}|${title}|${mmpp}`;
 }
 function uniqueServices(list){
   const seen=new Set();
   return list.filter(s=>{const k=dedupeKey(s);if(seen.has(k))return false;seen.add(k);return true;});
+}
+
+/* ===== QUAL CHIPS ===== */
+const COUNTRY_WORDS = [
+  'usa','uk','germany','france','italy','spain','canada','brazil','india','japan','korea','korean',
+  'turkey','mexico','australia','russia','uae','saudi','indonesia','vietnam','thailand','philippines'
+];
+function renderQualChips(s){
+  const name = (s.name || '').toLowerCase();
+  const chips = [];
+  if (s.min) chips.push(`<span class="pill">Min ${s.min}</span>`);
+  if (s.max) chips.push(`<span class="pill">Max ${s.max}</span>`);
+  if (s.dripfeed) chips.push(`<span class="pill">Dripfeed</span>`);
+  if (s.refill) chips.push(`<span class="pill">Refill</span>`);
+  if (/ultra\s*hq|premium/.test(name)) chips.push(`<span class="pill">Premium</span>`);
+  if (/\bhq\b|high\s*quality/.test(name)) chips.push(`<span class="pill">HQ</span>`);
+  if (/fast|instant|speed/i.test(name)) chips.push(`<span class="pill">Fast</span>`);
+  if (/cheapest|cheap/i.test(name)) chips.push(`<span class="pill">Cheapest</span>`);
+  if (/old\s*accounts?/i.test(name)) chips.push(`<span class="pill">Old Accounts</span>`);
+  if (/verified/i.test(name)) chips.push(`<span class="pill">Verified</span>`);
+  if (/real\b/.test(name)) chips.push(`<span class="pill">Real</span>`);
+  if (/\bgeo\b/i.test(name)) chips.push(`<span class="pill">Geo</span>`);
+  for (const c of COUNTRY_WORDS){ if (name.includes(c)) { chips.push(`<span class="pill">${c.toUpperCase()}</span>`); break; } }
+  return chips;
+}
+function accentFor(svc){
+  const slug = getPlatformSlug(svc.category || svc.name || '');
+  return PLATFORM_ACCENTS[slug] || PLATFORM_ACCENTS.other;
 }
 
 /* ===== FETCH + GROUP + RENDER ===== */
@@ -259,7 +317,6 @@ function render(){
   const q=(elQ.value||'').toLowerCase();
   const groups=groupByPlatform(ALL_SERVICES,q);
 
-  // order: priority first, then by group size
   const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','pinterest','reddit','linkedin','twitch','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
   const ordered=[...groups.keys()].sort((a,b)=>{
     const ai=priority.indexOf(a), bi=priority.indexOf(b);
@@ -306,21 +363,18 @@ function render(){
 function cardHtml(s){
   const titleText=prettyTitle(s);
   const price=(typeof s.price_per_1k==='number'&&isFinite(s.price_per_1k))?`$${s.price_per_1k.toFixed(2)}`:'-';
-  const maxLine=s.max?`Max ${Number(s.max).toLocaleString()}`:'';
+  const ring = accentFor(s) + '55'; // 33% alpha
   return `
-    <div class="card">
+    <div class="card" style="--ring:${ring}">
       <h3><span class="brand">[DropSource]</span> — ${escapeHtml(titleText)}</h3>
-      <div class="muted">${escapeHtml(maxLine)}</div>
-      <div class="row" style="margin:8px 0 10px">
-        ${s.min?`<span class="pill">Min ${s.min}</span>`:''}
-        ${s.max?`<span class="pill">Max ${s.max}</span>`:''}
-        ${s.dripfeed?'<span class="pill">Dripfeed</span>':''}
-        ${s.refill?'<span class="pill">Refill</span>':''}
+      <div class="muted">${s.max?`Max ${Number(s.max).toLocaleString()}`:''}</div>
+      <div class="row" style="margin:10px 0 12px">
+        ${renderQualChips(s).join('')}
       </div>
-      <div class="row" style="justify-content:space-between">
-        <div class="price"><strong>${price}</strong> <span class="per">/ 1k</span></div>
+      <div class="row" style="justify-content:flex-end">
         <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
       </div>
+      <div class="price-badge">${price}<span class="per">/ 1k</span></div>
     </div>
   `;
 }
