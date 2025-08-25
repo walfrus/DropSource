@@ -1,4 +1,97 @@
-// 1) EXACT icon filenames by platform slug
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DropSource — SMM</title>
+  <style>
+    :root{
+      --bg:#0b0b0f;
+      --card:#15161a;
+      --txt:#e8ecf1;
+      --muted:#a6acb3;
+      --brand:#59a0ff;
+      --accent:#8b5cf6;          /* price purple */
+      --chip:#1b1d23;
+      --chip-active:#2a1e3a;
+      --chip-border:#2b2f38;
+      --rule:#26282d;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
+
+    header{
+      padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;
+      border-bottom:1px solid var(--rule);
+    }
+    .container{max-width:1100px;margin:0 auto;padding:16px}
+
+    input,select,button{
+      background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px
+    }
+    button{cursor:pointer}
+
+    /* CATEGORY CHIPS BAR */
+    .catsbar{display:flex;gap:8px;align-items:center;overflow:auto;padding:8px 2px 0;scrollbar-width:none}
+    .catsbar::-webkit-scrollbar{display:none}
+    .chip{
+      display:inline-flex;align-items:center;gap:8px;
+      background:var(--chip);border:1px solid var(--chip-border);
+      color:var(--txt);padding:8px 12px;border-radius:999px;white-space:nowrap;cursor:pointer;
+      transition:.15s ease transform,.15s ease background,.15s ease border-color;
+    }
+    .chip:hover{transform:translateY(-1px)}
+    .chip.active{
+      background:linear-gradient(135deg,#221831,var(--chip-active));
+      border-color:#3b3052;
+      box-shadow:0 0 0 1px rgba(167,139,250,.15) inset;
+    }
+    .chip img.ico{width:16px;height:16px;display:block}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
+    .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
+    .card h3{margin:0 0 6px 0;font-size:16px}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
+
+    .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
+    .brand{color:var(--brand)}
+    .price strong{font-weight:700;color:var(--accent);text-shadow:0 0 10px rgba(139,92,246,.15)}
+    .price .per{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong class="brand">DropSource</strong> · Boosts</div>
+    <div class="row">
+      <input id="q" placeholder="Search services…" />
+      <!-- fallback select (hidden) -->
+      <select id="cat" style="display:none"><option value="">All categories</option></select>
+      <button id="reload">Reload</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="catsbar" class="catsbar" aria-label="Categories"></div>
+    <div id="services" class="grid"></div>
+  </div>
+
+  <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
+
+<script>
+const elQ = document.getElementById('q');
+const elCat = document.getElementById('cat'); // hidden fallback
+const elCatsBar = document.getElementById('catsbar');
+const elGrid = document.getElementById('services');
+const elReload = document.getElementById('reload');
+
+let ALL_SERVICES = [];
+let ACTIVE_CAT = ''; // this will be a platform slug ('' = all)
+
+/* ---------------- icons & platform detection ---------------- */
+
+/* exact filenames in /public/icons */
 const ICON_PATHS = {
   instagram: 'instagram.svg',
   tiktok: 'tiktok.svg',
@@ -30,8 +123,7 @@ const ICON_PATHS = {
   shazam: 'shazam.svg',
   imdb: 'imdb.svg',
   rumble: 'rumble.svg',
-
-  // SMM/traffic-y stuff
+  /* traffic / misc */
   exchange: 'exchange.svg',
   geotarget: 'geotarget.svg',
   googlereviews: 'googlereviews.svg',
@@ -46,12 +138,10 @@ const ICON_PATHS = {
   crypto: 'crypto.svg',
   datpiff: 'datpiff.svg',
   vpn: 'vpn.svg',
-
-  // true “other”
   other: 'specialservices.svg'
 };
 
-// 2) Robust platform detection (ORDER MATTERS; uses word boundaries)
+/* ordered rules with word boundaries; first match wins */
 const PLATFORM_RULES = [
   { slug:'instagram',   re:/\binstagram\b/i },
   { slug:'tiktok',      re:/\btik\s*tok\b|\btiktok\b/i },
@@ -59,7 +149,7 @@ const PLATFORM_RULES = [
   { slug:'facebook',    re:/\bfacebook\b|\bfb\b/i },
   { slug:'telegram',    re:/\btelegram\b/i },
   { slug:'twitter',     re:/\btwitter\b/i },
-  { slug:'x',           re:/\bx\b(?!\w)/i }, // literal “X”
+  { slug:'x',           re:/\bx\b(?!\w)/i },          // literal "X"
   { slug:'spotify',     re:/\bspotify\b/i },
   { slug:'soundcloud',  re:/\bsound\s*cloud\b|\bsoundcloud\b/i },
   { slug:'snapchat',    re:/\bsnap\s*chat\b|\bsnapchat\b/i },
@@ -83,12 +173,11 @@ const PLATFORM_RULES = [
   { slug:'shazam',      re:/\bshazam\b/i },
   { slug:'imdb',        re:/\bimdb\b/i },
   { slug:'rumble',      re:/\brumble\b/i },
-
-  // traffic / misc (keep after socials to avoid collisions)
+  /* misc traffic (after socials to avoid collisions) */
   { slug:'mixcloud',    re:/\bmixcloud\b/i },
   { slug:'massdm',      re:/\bmass\s*dm\b|\bmassdm\b/i },
   { slug:'geotarget',   re:/\bgeo\s*target(?:ed)?\b|\bgeotarget\b/i },
-  { slug:'googlereviews',re:/\bgoogle\s*reviews?\b/i },
+  { slug:'googlereviews', re:/\bgoogle\s*reviews?\b/i },
   { slug:'exchange',    re:/\bexchange\b/i },
   { slug:'mobile',      re:/\bmobile\s*traffic\b|\bmobile\b/i },
   { slug:'ownwebsite',  re:/\bown\s*website\b/i },
@@ -101,7 +190,6 @@ const PLATFORM_RULES = [
   { slug:'vpn',         re:/\bvpn\b/i }
 ];
 
-// 3) helpers
 function getPlatformSlug(text=''){
   const t = String(text).toLowerCase();
   for (const rule of PLATFORM_RULES){
@@ -114,3 +202,139 @@ function iconForCategory(cat){
   const file = ICON_PATHS[slug] || ICON_PATHS.other;
   return `/icons/${file}`;
 }
+function slugLabel(slug){
+  const map = {
+    okru:'OK.ru', vk:'VK', x:'X',
+    googlereviews:'Google Reviews',
+    webtraffic:'Web Traffic',
+    worldwidemobile:'Worldwide Mobile',
+    ownwebsite:'Own Website',
+    websitepremium:'Website Premium',
+    geotarget:'Geo Targeted',
+    massdm:'Mass DM'
+  };
+  return map[slug] || (slug.charAt(0).toUpperCase()+slug.slice(1));
+}
+
+/* ---------------- app logic ---------------- */
+
+function normalizeName(x) {
+  const raw = (x ?? '').toString();
+  return raw.replace(/\[?\s*DropSource\s*\]?/gi,'').replace(/^\s*[-–—]\s*/,'').trim() || 'Service';
+}
+
+async function fetchServices() {
+  const res = await fetch('/api/services');
+  const data = await res.json();
+  ALL_SERVICES = data;
+  buildCategories(data);
+  renderServices(filterServices());
+}
+
+function buildCategories(data){
+  // count by platform slug
+  const counts = new Map();
+  data.forEach(s=>{
+    const slug = getPlatformSlug(s.category);
+    counts.set(slug, (counts.get(slug)||0) + 1);
+  });
+
+  elCatsBar.innerHTML = '';
+  elCatsBar.appendChild(chipNode('All products', `/icons/${ICON_PATHS.other}`, '' ));
+
+  // preferred order, then the rest by count
+  const priority = ['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','x','threads','soundcloud','snapchat','reddit','linkedin','twitch','pinterest','discord','quora','tumblr','vimeo','okru','vk','kick','clubhouse','audiomack'];
+  const ordered = [
+    ...priority.filter(p=>counts.has(p)),
+    ...[...counts.keys()].filter(k=>!priority.includes(k)).sort((a,b)=>counts.get(b)-counts.get(a))
+  ];
+
+  for (const slug of ordered){
+    const label = `${slugLabel(slug)}`;
+    elCatsBar.appendChild(chipNode(label, `/icons/${ICON_PATHS[slug]||ICON_PATHS.other}`, slug));
+  }
+  updateActiveChip();
+}
+
+function chipNode(label, iconPath, value){
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = 'chip';
+  node.dataset.value = value; // '' or platform slug
+  node.innerHTML = `<img src="${iconPath}" class="ico" alt=""> <span>${label}</span>`;
+  node.addEventListener('click', ()=>{
+    ACTIVE_CAT = value;
+    updateActiveChip();
+    renderServices(filterServices());
+  });
+  return node;
+}
+
+function updateActiveChip(){
+  [...elCatsBar.querySelectorAll('.chip')].forEach(ch=>{
+    ch.classList.toggle('active', ch.dataset.value === ACTIVE_CAT);
+  });
+}
+
+function filterServices(){
+  const q = (elQ.value || '').toLowerCase();
+  return ALL_SERVICES.filter(s=>{
+    const hay = `${s.name} ${s.title} ${s.category}`.toLowerCase();
+    const matchesGroup = !ACTIVE_CAT || getPlatformSlug(s.category) === ACTIVE_CAT;
+    return matchesGroup && (!q || hay.includes(q));
+  });
+}
+
+function renderServices(services) {
+  elGrid.innerHTML = services.map(s => {
+    const displayName = escapeHtml(normalizeName(s.name ?? s.title ?? 'Service'));
+    const price = (typeof s.price_per_1k === 'number' && isFinite(s.price_per_1k))
+      ? `$${s.price_per_1k.toFixed(2)}`
+      : '-';
+    return `
+      <div class="card">
+        <h3><span class="brand">[DropSource]</span> — ${displayName}</h3>
+        <div class="muted">${escapeHtml(s.category || '')}</div>
+        <div class="row" style="margin:8px 0 10px">
+          <span class="pill">Min ${s.min}</span>
+          <span class="pill">Max ${s.max}</span>
+          ${s.dripfeed ? '<span class="pill">Dripfeed</span>' : ''}
+          ${s.refill ? '<span class="pill">Refill</span>' : ''}
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <div class="price"><strong>${price}</strong> <span class="per">/ 1k</span></div>
+          <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
+
+async function placeOrder(serviceId, link, quantity, runs, interval) {
+  const res = await fetch('/api/order', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ service: serviceId, link, quantity, runs, interval })
+  });
+  return res.json();
+}
+
+function openOrder(svc){
+  const link = prompt('Paste the target link (post/profile URL):'); if(!link) return;
+  const qty = Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
+  if(!qty || qty < svc.min || qty > svc.max){ alert('Quantity out of range'); return; }
+  placeOrder(svc.id, link, qty).then(r=>{
+    if(r.error) alert('Error: '+r.error);
+    else alert('Order placed! ID: '+r.order);
+  }).catch(e=>alert('Network issue: '+e.message));
+}
+
+/* events */
+elQ.addEventListener('input', ()=>renderServices(filterServices()));
+elReload.addEventListener('click', fetchServices);
+
+fetchServices();
+</script>
+</body>
+</html>
