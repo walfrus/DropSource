@@ -10,9 +10,8 @@
       --card:#15161a;
       --txt:#e8ecf1;
       --muted:#a6acb3;
-      --brand:#59a0ff;     /* DropSource blue for the tag/logo */
-      --accent:#8b5cf6;    /* price purple */
-      --accent-2:#a78bfa;
+      --brand:#59a0ff;
+      --accent:#8b5cf6;
       --chip:#1b1d23;
       --chip-active:#2a1e3a;
       --chip-border:#2b2f38;
@@ -20,35 +19,18 @@
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
 
-    header{
-      padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;
-      border-bottom:1px solid #26282d
-    }
+    header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #26282d;}
     .container{max-width:1100px;margin:0 auto;padding:16px}
 
-    input,select,button{
-      background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px
-    }
+    input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
     button{cursor:pointer}
 
-    /* CATEGORY CHIPS BAR */
-    .catsbar{
-      display:flex; gap:8px; align-items:center; overflow:auto; padding:8px 2px 0; scrollbar-width:none
-    }
+    .catsbar{display:flex;gap:8px;align-items:center;overflow:auto;padding:8px 2px 0;scrollbar-width:none}
     .catsbar::-webkit-scrollbar{display:none}
-    .chip{
-      display:inline-flex; align-items:center; gap:8px;
-      background:var(--chip); border:1px solid var(--chip-border);
-      color:var(--txt); padding:8px 12px; border-radius:999px; white-space:nowrap; cursor:pointer;
-      transition:.15s ease transform, .15s ease background, .15s ease color, .15s ease border-color
-    }
-    .chip:hover{ transform:translateY(-1px) }
-    .chip .ico{font-size:16px}
-    .chip.active{
-      background:linear-gradient(135deg, #221831, var(--chip-active));
-      border-color:#3b3052;
-      box-shadow:0 0 0 1px rgba(167,139,250,.15) inset;
-    }
+    .chip{display:inline-flex;align-items:center;gap:8px;background:var(--chip);border:1px solid var(--chip-border);color:var(--txt);padding:8px 12px;border-radius:999px;white-space:nowrap;cursor:pointer;transition:.15s ease}
+    .chip:hover{transform:translateY(-1px)}
+    .chip.active{background:linear-gradient(135deg,#221831,var(--chip-active));border-color:#3b3052;box-shadow:0 0 0 1px rgba(167,139,250,.15) inset}
+    .chip img.ico{width:16px;height:16px;display:block}
 
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
     .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
@@ -58,13 +40,7 @@
     .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
     .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
     .brand{color:var(--brand)}
-
-    /* price = purple vibe */
-    .price strong{
-      font-weight:700;
-      color:var(--accent);
-      text-shadow:0 0 10px rgba(139,92,246,.15);
-    }
+    .price strong{font-weight:700;color:var(--accent);text-shadow:0 0 10px rgba(139,92,246,.15);}
     .price .per{color:var(--muted)}
   </style>
 </head>
@@ -73,60 +49,91 @@
     <div><strong class="brand">DropSource</strong> · Boosts</div>
     <div class="row">
       <input id="q" placeholder="Search services…" />
-      <!-- keeping the select as a fallback; chips will do the filtering -->
       <select id="cat" style="display:none"><option value="">All categories</option></select>
       <button id="reload">Reload</button>
     </div>
   </header>
 
   <div class="container">
-    <!-- icon chips appear here -->
     <div id="catsbar" class="catsbar" aria-label="Categories"></div>
-
-    <div id="services" class="grid" style="margin-top:12px"></div>
+    <div id="services" class="grid"></div>
   </div>
 
   <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
 
 <script>
 const elQ = document.getElementById('q');
-const elCat = document.getElementById('cat'); // hidden fallback
+const elCat = document.getElementById('cat');
 const elCatsBar = document.getElementById('catsbar');
 const elGrid = document.getElementById('services');
 const elReload = document.getElementById('reload');
 
 let ALL_SERVICES = [];
-let ACTIVE_CAT = ''; // empty = all
+let ACTIVE_CAT = '';
 
-// simple icon map by keyword
+const ICON_MAP = {
+  instagram: 'instagram.svg',
+  tiktok: 'tiktok.svg',
+  youtube: 'youtube.svg',
+  facebook: 'facebook.svg',
+  telegram: 'telegram.svg',
+  twitter: 'specialtwitter.svg',
+  x: 'x.svg',
+  spotify: 'spotify.svg',
+  threads: 'threads.svg',
+  reddit: 'reddit.svg',
+  linkedin: 'linkedin.svg',
+  soundcloud: 'soundcloud.svg',
+  snapchat: 'snapchat.svg',
+  twitch: 'twitch.svg',
+  pinterest: 'pinterest.svg',
+  discord: 'discord.svg',
+  quora: 'quora.svg',
+  kick: 'kick.svg',
+  audiomack: 'audiomack.svg',
+  clubhouse: 'clubhouse.svg',
+  vimeo: 'vimeo.svg',
+  tumblr: 'tumblr.svg',
+  shazam: 'shazam.svg',
+  imdb: 'imdb.svg',
+  okru: 'okru.svg',
+  vk: 'vkontakte.svg',
+  dailymotion: 'dailymotion.svg',
+  rumble: 'rumble.svg',
+  reverbnation: 'reverbnation.svg',
+  tidal: 'tidal.svg',
+  crypto: 'crypto.svg',
+  datpiff: 'datpiff.svg',
+  exchange: 'exchange.svg',
+  geotarget: 'geotarget.svg',
+  massdm: 'massdm.svg',
+  mixcloud: 'mixcloud.svg',
+  onwebsite: 'onwebsite.svg',
+  podcast: 'podcast.svg',
+  rumble: 'rumble.svg',
+  websitepremium: 'websitepremium.svg',
+  webtraffic: 'webtraffic.svg',
+  vpn: 'vpn.svg',
+  whatsapp: 'whatsapp.svg',
+  special: 'specialservices.svg'
+};
+
 function catIcon(name=''){
   const n = name.toLowerCase();
-  if (n.includes('instagram')) return '📸';
-  if (n.includes('tiktok'))    return '🎵';
-  if (n.includes('youtube'))   return '▶️';
-  if (n.includes('facebook'))  return '📘';
-  if (n.includes('telegram'))  return '✈️';
-  if (n.includes('twitter') || n.includes('x ' ) || n === 'x') return '🐦';
-  if (n.includes('spotify'))   return '🎧';
-  if (n.includes('threads'))   return '🧵';
-  if (n.includes('reddit'))    return '👽';
-  if (n.includes('linkedin'))  return '💼';
-  if (n.includes('soundcloud'))return '☁️';
-  if (n.includes('special'))   return '⭐';
-  return '🧩';
+  for (const key in ICON_MAP) {
+    if (n.includes(key)) {
+      return `/icons/${ICON_MAP[key]}`;
+    }
+  }
+  return '/icons/specialservices.svg';
 }
 
-// remove “DropSource” duplicates from incoming names
 function normalizeName(x) {
   const raw = (x ?? '').toString();
-  return raw
-    .replace(/\[?\s*DropSource\s*\]?/gi, '')
-    .replace(/^\s*[-–—]\s*/, '')
-    .trim() || 'Service';
+  return raw.replace(/\[?\s*DropSource\s*\]?/gi, '').replace(/^\s*[-–—]\s*/, '').trim() || 'Service';
 }
 
 async function fetchServices() {
-  // call API unfiltered, filter on client (so chips can swap fast)
   const url = `/api/services`;
   const res = await fetch(url);
   const data = await res.json();
@@ -135,33 +142,28 @@ async function fetchServices() {
   renderServices(filterServices());
 }
 
-// build icon chips from categories
 function buildCategories(data){
   const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
-  // fallback select (hidden) still gets values in case you want it later
   if (!elCat.dataset.filled) {
     for (const c of cats) {
       const opt = document.createElement('option'); opt.value = c; opt.textContent = c; elCat.appendChild(opt);
     }
     elCat.dataset.filled = '1';
   }
-
-  // chips
   elCatsBar.innerHTML = '';
-  const allChip = chipNode('All products', '✨', '');
-  elCatsBar.appendChild(allChip);
+  elCatsBar.appendChild(chipNode('All products','/icons/specialservices.svg',''));
   cats.forEach(c=>{
-    elCatsBar.appendChild(chipNode(c, catIcon(c), c));
+    elCatsBar.appendChild(chipNode(c,catIcon(c),c));
   });
   updateActiveChip();
 }
 
-function chipNode(label, icon, value){
+function chipNode(label, iconPath, value){
   const node = document.createElement('button');
   node.type = 'button';
   node.className = 'chip';
   node.dataset.value = value;
-  node.innerHTML = `<span class="ico">${icon}</span><span>${label}</span>`;
+  node.innerHTML = `<img src="${iconPath}" class="ico" alt=""> <span>${label}</span>`;
   node.addEventListener('click', ()=>{
     ACTIVE_CAT = value;
     updateActiveChip();
@@ -188,14 +190,10 @@ function filterServices(){
 function renderServices(services) {
   elGrid.innerHTML = services.map(s => {
     const displayName = escapeHtml(normalizeName(s.name ?? s.title ?? 'Service'));
-    const price = (typeof s.price_per_1k === 'number' && isFinite(s.price_per_1k))
-      ? `$${s.price_per_1k.toFixed(2)}`
-      : '-';
+    const price = (typeof s.price_per_1k === 'number' && isFinite(s.price_per_1k)) ? `$${s.price_per_1k.toFixed(2)}` : '-';
     return `
       <div class="card">
-        <h3>
-          <span class="brand">[DropSource]</span> — ${displayName}
-        </h3>
+        <h3><span class="brand">[DropSource]</span> — ${displayName}</h3>
         <div class="muted">${escapeHtml(s.category || '')}</div>
         <div class="row" style="margin:8px 0 10px">
           <span class="pill">Min ${s.min}</span>
@@ -212,30 +210,24 @@ function renderServices(services) {
   }).join('');
 }
 
-function escapeHtml(x){return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''}
+function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
 
-async function placeOrder(serviceId, link, quantity, runs, interval) {
-  const res = await fetch('/api/order', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ service: serviceId, link, quantity, runs, interval })
-  });
+async function placeOrder(serviceId,link,quantity,runs,interval){
+  const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:serviceId,link,quantity,runs,interval})});
   return res.json();
 }
 
 function openOrder(svc){
-  const link = prompt('Paste the target link (post/profile URL):');
-  if(!link) return;
-  const qty = Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
-  if(!qty || qty < svc.min || qty > svc.max){ alert('Quantity out of range'); return; }
-  placeOrder(svc.id, link, qty).then(r=>{
-    if(r.error) alert('Error: '+r.error);
-    else alert('Order placed! ID: '+r.order);
+  const link=prompt('Paste the target link (post/profile URL):'); if(!link) return;
+  const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
+  if(!qty||qty<svc.min||qty>svc.max){alert('Quantity out of range');return;}
+  placeOrder(svc.id,link,qty).then(r=>{
+    if(r.error) alert('Error: '+r.error); else alert('Order placed! ID: '+r.order);
   }).catch(e=>alert('Network issue: '+e.message));
 }
 
-elQ.addEventListener('input', () => renderServices(filterServices()));
-elReload.addEventListener('click', fetchServices);
-
+elQ.addEventListener('input',()=>renderServices(filterServices()));
+elReload.addEventListener('click',fetchServices);
 fetchServices();
 </script>
 </body>
