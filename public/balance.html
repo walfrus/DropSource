@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>DropSource — Balance</title>
+  <style>
+    body { background:#0b0b0f; color:#e8ecf1; font:16px system-ui; padding:2rem; }
+    .ok { color:#4caf50; }
+    .canceled { color:#f44336; }
+    .balance { margin-top:1rem; font-size:1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Deposit Status</h1>
+  <div id="status">Checking…</div>
+  <div class="balance" id="balance"></div>
+
+  <script>
+    // check query params
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('ok')) {
+      document.getElementById('status').innerHTML = '<span class="ok">✅ Payment successful! Wallet will update shortly.</span>';
+    } else if (params.has('canceled')) {
+      document.getElementById('status').innerHTML = '<span class="canceled">❌ Payment canceled.</span>';
+    }
+
+    // fetch wallet balance
+    fetch('/api/wallet/get', {
+      headers: {
+        'x-user-id': 'demo_123',   // 🔧 replace with logged in user
+        'x-user-email': 'demo@example.com'
+      }
+    })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('balance').textContent =
+        `Current balance: $${(data.balance_cents/100).toFixed(2)} ${data.currency.toUpperCase()}`;
+    })
+    .catch(err => {
+      document.getElementById('balance').textContent = '⚠️ Could not load balance';
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
