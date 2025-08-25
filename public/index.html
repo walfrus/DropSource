@@ -1,375 +1,244 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>DropSource — Boosts</title>
-<style>
-  :root{
-    --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3; --rule:#26282d;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
-  header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule)}
-  .container{max-width:1100px;margin:0 auto;padding:16px}
-  input,button{font:inherit}
-  input{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
-  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
-  .toolbar button{background:#0f1117;border:1px solid #2a2d34;color:var(--txt);padding:8px 12px;border-radius:10px;cursor:pointer}
-  .toolbar .count{color:var(--muted);font-size:12px}
-
-  /* sections */
-  .section{border-radius:14px;overflow:hidden;margin-bottom:16px}
-  .section-header{
-    display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;
-    background:linear-gradient(180deg,#1a1b2a,#141524); border:1px solid #26273a;border-radius:14px;
-  }
-  .section-header img{width:18px;height:18px}
-  .section-title{font-weight:600;text-transform:capitalize}
-  .section-meta{margin-left:auto;color:var(--muted);font-size:12px}
-  .chev{transition:.15s transform}
-  .collapsed .chev{transform:rotate(-90deg)}
-  .section-body{padding:12px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-
-  /* cards */
-  .card{
-    position:relative;border-radius:18px;padding:18px 16px 52px;
-    background:#15161a;border:1px solid #2b2d3d;
-    box-shadow:0 0 0 1px rgba(255,255,255,.02) inset, 0 8px 20px rgba(0,0,0,.35);
-    transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease;
-  }
-  .card:hover{
-    transform:translateY(-2px);
-    border-color:#3a3d57;
-    box-shadow:0 0 0 1px rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45), 0 0 0 3px var(--ring, rgba(139,92,246,.35));
-  }
-  .card h3{margin:0 0 8px 0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .muted{color:var(--muted)}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-
-  .pill{
-    padding:3px 8px;border-radius:999px;font-size:12px;color:#fff;
-    background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.08));
-    border:1px solid #2b2d3d;
-  }
-
-  /* price badge */
-  .price-badge{
-    position:absolute;left:14px;bottom:12px;padding:6px 10px;border-radius:10px;
-    background:color-mix(in srgb,var(--t,#8b5cf6) 18%,#0f1020);
-    border:1px solid color-mix(in srgb,var(--t,#8b5cf6) 30%,#343654);
-    font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.4);
-  }
-  .price-badge .per{color:var(--muted);font-weight:500;margin-left:4px}
-
-  /* buttons */
-  .btn{
-    padding:8px 12px;border-radius:10px;border:1px solid #2b2d3d;
-    background:#101221;color:#e8ecf1;cursor:pointer;
-    transition:filter .12s ease, transform .05s ease;
-  }
-  .btn:hover{filter:brightness(1.07)}
-  .btn:active{transform:translateY(1px)}
-  .btn.primary{
-    border-color:transparent;
-    background:linear-gradient(180deg,
-      color-mix(in srgb,var(--t) 22%,#0f1020),
-      color-mix(in srgb,var(--t) 10%,#0b0c16));
-  }
-  .btn.ghost{
-    background:transparent;
-    border-color:color-mix(in srgb,var(--t) 35%,#2b2d3d);
-  }
-
-  /* modal */
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50}
-  .modal{width:min(900px,100%);background:#0f1119;border:1px solid #2a2d34;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
-  .modal header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #222532}
-  .modal header h4{margin:0;font-size:16px}
-  .modal .body{padding:12px 12px 16px;max-height:65vh;overflow:auto}
-  table{width:100%;border-collapse:separate;border-spacing:0 8px}
-  th,td{font-size:13px;text-align:left;padding:8px 10px;background:#141728;border:1px solid #25283a}
-  th{position:sticky;top:0;background:#171a2b;z-index:1}
-  tr td:first-child, tr th:first-child{border-top-left-radius:8px;border-bottom-left-radius:8px}
-  tr td:last-child, tr th:last-child{border-top-right-radius:8px;border-bottom-right-radius:8px}
-
-  .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
-  #err{margin-top:12px;color:#ff6b6b;font-size:12px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DropSource — SMM</title>
+  <style>
+    :root {
+      --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3; --brand:#59a0ff;
+      --chip-bg:#1c2028; --chip-br:#2b3140;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
+    header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #26282d}
+    .container{max-width:1100px;margin:0 auto;padding:16px}
+    input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
+    button{cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
+    .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
+    .card h3{margin:0 0 8px 0;font-size:16px;line-height:1.3}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .pill{padding:3px 8px;border-radius:999px;background:var(--chip-bg);border:1px solid var(--chip-br);color:#c9d2dc;font-size:12px}
+    .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
+    .brand{color:var(--brand) !important}
+    .catchip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid var(--chip-br);background:var(--chip-bg);font-weight:600}
+    .catchip img{width:14px;height:14px;display:block}
+    .tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+  </style>
 </head>
 <body>
-<header>
-  <div><strong class="brand">DropSource</strong> · Boosts</div>
-  <div class="row">
-    <input id="q" placeholder="Search services…"/>
-    <button id="reload">Reload</button>
-  </div>
-</header>
-
-<div class="container">
-  <div class="toolbar">
-    <button id="expandAll">Expand all</button>
-    <button id="collapseAll">Collapse all</button>
-    <span class="count" id="totalCount"></span>
-  </div>
-  <div id="sections"></div>
-  <div id="err"></div>
-</div>
-
-<!-- VARIANT MODAL -->
-<div id="modalWrap" class="modal-backdrop" role="dialog" aria-modal="true">
-  <div class="modal">
-    <header>
-      <h4 id="modalTitle">Variants</h4>
-      <button id="modalClose" class="btn">Close</button>
-    </header>
-    <div class="body">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:38%">Variant</th>
-            <th>Tags</th>
-            <th>Min</th>
-            <th>Max</th>
-            <th>Price /1k</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="variantRows"></tbody>
-      </table>
+  <header>
+    <div><strong class="brand">DropSource</strong> · Boosts</div>
+    <div class="row">
+      <input id="q" placeholder="Search services…" />
+      <select id="cat"><option value="">All categories</option></select>
+      <button id="reload">Reload</button>
     </div>
-  </div>
-</div>
+  </header>
 
-<div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
+  <div class="container">
+    <div id="services" class="grid"></div>
+  </div>
+
+  <div class="footer">Powered by <span class="brand">DropSource</span> • your growth plug, but like… responsibly ✌️</div>
 
 <script>
-/* DOM */
 const elQ = document.getElementById('q');
-const elSections = document.getElementById('sections');
+const elCat = document.getElementById('cat');
+const elGrid = document.getElementById('services');
 const elReload = document.getElementById('reload');
-const elErr = document.getElementById('err');
-const elTotal = document.getElementById('totalCount');
-const elExpandAll = document.getElementById('expandAll');
-const elCollapseAll = document.getElementById('collapseAll');
-const modalWrap = document.getElementById('modalWrap');
-const modalClose = document.getElementById('modalClose');
-const modalTitle = document.getElementById('modalTitle');
-const variantRows = document.getElementById('variantRows');
 
-/* state */
-let ALL_SERVICES = [];
-let COLLAPSED = new Set();
+/* -------------------- CATEGORY COLOR & ICON MAP -------------------- */
+const CAT = (() => {
+  const map = [
+    // slug,        display,        color,     icon filename (in /icons)
+    ['instagram',  'Instagram',     '#E1306C', 'instagram.svg'],
+    ['tiktok',     'Tiktok',        '#010101', 'tiktok.svg'],
+    ['youtube',    'Youtube',       '#FF0000', 'youtube.svg'],
+    ['telegram',   'Telegram',      '#229ED9', 'telegram.svg'],
+    ['twitter',    'Twitter',       '#1DA1F2', 'twitter.svg'],
+    ['x',          'X',             '#000000', 'x.svg'],
+    ['facebook',   'Facebook',      '#1877F2', 'facebook.svg'],
+    ['threads',    'Threads',       '#000000', 'threads.svg'],
+    ['snapchat',   'Snapchat',      '#FFFC00', 'snapchat.svg'],
+    ['discord',    'Discord',       '#5865F2', 'discord.svg'],
+    ['vk',         'Vk',            '#4C75A3', 'vkontakte.svg'],
+    ['reddit',     'Reddit',        '#FF4500', 'reddit.svg'],
+    ['quora',      'Quora',         '#B92B27', 'quora.svg'],
+    ['audionmack', 'Audiomack',     '#FFA200', 'audiomack.svg'],
+    ['soundcloud', 'Soundcloud',    '#FF5500', 'soundcloud.svg'],
+    ['mixcloud',   'Mixcloud',      '#52ADF4', 'mixcloud.svg'],
+    ['spotify',    'Spotify',       '#1DB954', 'spotify.svg'],
+    ['tidal',      'Tidal',         '#0A0A0A', 'tidal.svg'],
+    ['shazam',     'Shazam',        '#2F80ED', 'shazam.svg'],
+    ['twitch',     'Twitch',        '#9146FF', 'twitch.svg'],
+    ['vimeo',      'Vimeo',         '#19B7EA', 'vimeo.svg'],
+    ['linkedin',   'LinkedIn',      '#0A66C2', 'linkedin.svg'],
+    ['pinterest',  'Pinterest',     '#E60023', 'pinterest.svg'],
+    ['dailymotion','Dailymotion',   '#0066DC', 'dailymotion.svg'],
+    ['rumble',     'Rumble',        '#85C742', 'rumble.svg'],
+    ['okru',       'OK.ru',         '#EE8208', 'okru.svg'],
+    ['coub',       'Coub',          '#1DA1F2', 'coub.svg'],
+    ['clubhouse',  'Clubhouse',     '#000000', 'clubhouse.svg'],
+    ['crypto',     'Crypto',        '#F7931A', 'crypto.svg'],
+    ['podcast',    'Podcast',       '#8E44AD', 'podcast.svg'],
+    ['massdm',     'MassDM',        '#8E44AD', 'massdm.svg'],
+    ['exchange',   'Exchange',      '#2D9CDB', 'exchange.svg'],
+    ['mobile',     'Mobile',        '#27AE60', 'mobile.svg'],
+    ['geotarget',  'GeoTarget',     '#2D9CDB', 'geotarget.svg'],
+    ['googlereviews','Google Reviews','#4285F4','googlereviews.svg'],
+    ['ownwebsite', 'Own Website',   '#2C3E50', 'ownwebsite.svg'],
+    ['webtraffic', 'Web Traffic',   '#3498DB', 'webtraffic.svg'],
+    ['websitetrafficpremium', 'Website Traffic (Premium)', '#9B59B6', 'websitetraffic.svg'],
+    ['websitepremium','Website Premium','#9B59B6','websitepremium.svg'],
+    ['maskedtraffic','Masked Traffic','#16A085', 'maskedtraffic.svg'],
+    ['vpn',        'VPN',           '#9B59B6', 'vpn.svg'],
+    ['reverbnation','Reverbnation', '#000000', 'reverbnation.svg'],
+    ['imdb',       'IMDb',          '#F5C518', 'imdb.svg'],
+    ['datpiff',    'Datpiff',       '#2B2B2B', 'datpiff.svg'],
+    ['whatsapp',   'WhatsApp',      '#25D366', 'whatsapp.svg'],
+    ['specialservices','Special Services','#FF7E67','specialservices.svg'],
+    ['specialtwitter','Special Twitter','#1DA1F2','specialtwitter.svg'],
+    ['other',      'Other',         '#7F8C8D', 'other.svg']
+  ];
 
-/* icons + colors */
-const ICON_PATHS = {
-  instagram:'instagram.svg', tiktok:'tiktok.svg', youtube:'youtube.svg', facebook:'facebook.svg',
-  twitter:'specialtwitter.svg', telegram:'telegram.svg', spotify:'spotify.svg', threads:'threads.svg',
-  soundcloud:'soundcloud.svg', pinterest:'pinterest.svg', reddit:'reddit.svg', linkedin:'linkedin.svg',
-  twitch:'twitch.svg', vk:'vkontakte.svg', okru:'okru.svg', audiomack:'audiomack.svg',
-  reverbnation:'reverbnation.svg', tidal:'tidal.svg', shazam:'shazam.svg', dailymotion:'dailymotion.svg',
-  datpiff:'datpiff.svg', mixcloud:'mixcloud.svg', rumble:'rumble.svg', imdb:'imdb.svg',
-  maskedtraffic:'maskedtraffic.svg', websitepremium:'websitepremium.svg', webtraffic:'webtraffic.svg', other:'other.svg'
-};
-const ACCENTS = {
-  instagram:'#e1306c', youtube:'#ff0033', tiktok:'#29bdb1', facebook:'#1877f2',
-  twitter:'#1d9bf0', spotify:'#1db954', telegram:'#2aabee', threads:'#ffffff',
-  soundcloud:'#ff5500', pinterest:'#e60023', reddit:'#ff4500', linkedin:'#0a66c2',
-  twitch:'#9146ff', vk:'#4c75a3', okru:'#ed812b', audiomack:'#f2a900', reverbnation:'#e31e24',
-  tidal:'#0a0a0a', shazam:'#08f', dailymotion:'#0066dc', datpiff:'#86c232',
-  mixcloud:'#52aad8', rumble:'#85c742', imdb:'#f5c518', maskedtraffic:'#8b5cf6',
-  websitepremium:'#a78bfa', webtraffic:'#8b5cf6', other:'#8b5cf6'
-};
-function platformOf(txt=''){txt=String(txt).toLowerCase();for(const k of Object.keys(ICON_PATHS)){if(txt.includes(k))return k;}return 'other';}
-function accentFor(svc){return ACCENTS[platformOf(svc.category||svc.name||'')]||ACCENTS.other;}
-
-/* feature chips */
-const COUNTRY_WORDS = ['usa','uk','germany','france','italy','spain','canada','brazil','india','japan','korea','korean','turkey','mexico','australia','russia','uae','saudi','indonesia','vietnam','thailand','philippines'];
-function chipListForName(name){
-  const n=(name||'').toLowerCase(); const out=[];
-  if(/\bultra\s*hq|premium/.test(n)) out.push('Premium');
-  if(/\bhq\b|high\s*quality/.test(n)) out.push('HQ');
-  if(/fast|instant|speed/i.test(n)) out.push('Fast');
-  if(/cheapest|cheap/i.test(n)) out.push('Cheapest');
-  if(/old\s*accounts?/i.test(n)) out.push('Old Accounts');
-  if(/verified/i.test(n)) out.push('Verified');
-  if(/real\b/.test(n)) out.push('Real');
-  if(/\bgeo\b/i.test(n)) out.push('Geo');
-  for(const c of COUNTRY_WORDS){ if(n.includes(c)){ out.push(c.toUpperCase()); break; } }
-  return out;
-}
-function renderQualChips(s){
-  const chips=[]; if(s.min) chips.push(`Min ${s.min}`); if(s.max) chips.push(`Max ${s.max}`);
-  if(s.dripfeed) chips.push('Dripfeed'); if(s.refill) chips.push('Refill');
-  return chips.concat(chipListForName(s.name));
-}
-
-/* product extraction */
-const PRODUCT_WORDS=['Followers','Likes','Views','Comments','Subscribers','Saves','Story Views','Impressions','Shares','Plays','Streams','Downloads','Members','Votes','Service'];
-function extractProduct(name='',cat=''){
-  const hay=`${name} ${cat}`.toLowerCase();
-  for(const w of PRODUCT_WORDS){
-    const re=new RegExp(`\\b${w.toLowerCase().replace(/\s+/g,'\\s*')}\\b`,'i');
-    if(re.test(hay)) return w;
+  // helper: loose matching of category strings coming from provider
+  function slugify(x=''){ 
+    return x.toLowerCase()
+            .replace(/[^a-z0-9]+/g,'')
+            .replace(/instagramm?/,'instagram')
+            .replace(/^ig$/,'instagram')
+            .replace(/^yt$/,'youtube')
+            .replace(/^fb$/,'facebook')
+            .replace(/^x$/,'x');
   }
-  if(/follow/i.test(hay)) return 'Followers';
-  if(/like/i.test(hay)) return 'Likes';
-  if(/view/i.test(hay)) return 'Views';
-  if(/comment/i.test(hay)) return 'Comments';
-  if(/sub/i.test(hay)) return 'Subscribers';
-  if(/save/i.test(hay)) return 'Saves';
-  if(/impression/i.test(hay)) return 'Impressions';
-  if(/share/i.test(hay)) return 'Shares';
-  if(/play|stream/i.test(hay)) return 'Plays';
-  if(/download/i.test(hay)) return 'Downloads';
-  return 'Service';
-}
-
-/* grouping helpers */
-function groupByPlatform(list){const m=new Map();for(const s of list){const key=platformOf(s.category||s.name||'');if(!m.has(key))m.set(key,[]);m.get(key).push(s);}return m;}
-function groupIntoBases(services){
-  const bases=new Map();
-  for(const s of services){
-    const slug=platformOf(s.category||s.name||'');
-    const product=extractProduct(s.name||'', s.category||'');
-    const key=`${slug}|${product}`;
-    if(!bases.has(key)) bases.set(key,{slug,product,items:[]});
-    bases.get(key).items.push(s);
+  const bySlug = Object.fromEntries(map.map(([slug, name, color, icon]) => [slug, {name,color,icon,slug}]));
+  function pick(rawCat=''){
+    const s = slugify(rawCat);
+    if (bySlug[s]) return bySlug[s];
+    // heuristic: find first slug contained in text
+    for (const k of Object.keys(bySlug)) if (s.includes(k)) return bySlug[k];
+    return bySlug.other;
   }
-  return bases;
+  return { pick };
+})();
+
+/* -------------------- TAG COLORING -------------------- */
+function tagStyle(label=''){
+  const l = label.toLowerCase();
+  // speed / quality
+  if (/(fast|instant|speed|quick)/.test(l)) return 'background:#0d1f14;border-color:#1c7c43;color:#b8f7d4';
+  if (/(cheap|cheapest|promo|best price)/.test(l)) return 'background:#1d1020;border-color:#a83ea8;color:#f5b6ff';
+  if (/(real|hq|quality|verified|premium)/.test(l)) return 'background:#0f1423;border-color:#3762ff;color:#c6d4ff';
+  if (/(refill|r\d+)/.test(l)) return 'background:#0f1720;border-color:#2a6bb0;color:#b9dafc';
+  if (/(drip|dripfeed)/.test(l)) return 'background:#1a0f20;border-color:#8e44ad;color:#e7c7ff';
+  // geo / language
+  if (/(brazil|br|usa|germany|korea|korean|india|turkey|arab|russia|kz|uae|mexico|global)/.test(l))
+    return 'background:#191a0f;border-color:#8a8f2a;color:#e5f39b';
+  // default
+  return '';
 }
 
-/* render */
-function render(){
-  const q=(elQ.value||'').toLowerCase();
-  const filtered=ALL_SERVICES.filter(s=>(`${s.name||''} ${s.title||''} ${s.category||''}`.toLowerCase().includes(q)));
-  elTotal.textContent=`${filtered.length.toLocaleString()} services`;
+/* -------------------- HELPERS -------------------- */
+function escapeHtml(x){return x?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ''}
+function parseTags(s=''){
+  // naive tag split from service name/desc
+  const raw = s.split(/[\[\]\|\-•,]+/).map(v=>v.trim()).filter(Boolean);
+  const uniq = Array.from(new Set(raw)).slice(0,6);
+  return uniq;
+}
 
-  const byPlatform=groupByPlatform(filtered);
-  elSections.innerHTML='';
+/* -------------------- RENDER -------------------- */
+async function fetchServices() {
+  const q = encodeURIComponent(elQ.value || '');
+  const cat = encodeURIComponent(elCat.value || '');
+  const url = `/api/services?${q ? 'q='+q+'&' : ''}${cat ? 'category='+cat : ''}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  renderServices(data);
 
-  for(const [slug,arr] of byPlatform.entries()){
-    const section=document.createElement('section');
-    section.className='section'+(COLLAPSED.has(slug)?' collapsed':'');
-
-    const bases=groupIntoBases(arr);
-    const cards=[];
-    for(const {slug:sl,product,items} of bases.values()){
-      const cheapest=items.reduce((a,b)=>(a?.price_per_1k||Infinity)<(b?.price_per_1k||Infinity)?a:b,null);
-      const ring=(ACCENTS[sl]||ACCENTS.other)+'55';
-      const title=`${slug} ${product}`;
-      // compact overview chips:
-      const tags=new Set(); let minMin=Infinity,maxMax=0;
-      for(const s of items){
-        minMin=Math.min(minMin, s.min||Infinity); maxMax=Math.max(maxMax, s.max||0);
-        for(const t of chipListForName(s.name)) tags.add(t);
-        if(s.refill) tags.add('Refill'); if(s.dripfeed) tags.add('Dripfeed');
-      }
-      const chipLine=[]; if(isFinite(minMin)) chipLine.push(`Min ${minMin}`); if(maxMax>0) chipLine.push(`Max ${maxMax.toLocaleString()}`);
-      for(const t of tags){ if(chipLine.length>=6) break; chipLine.push(t); }
-
-      cards.push(`
-        <div class="card" style="--ring:${ring};--t:${ACCENTS[sl]||ACCENTS.other}">
-          <h3><span class="brand">[DropSource]</span> — ${escapeHtml(title)}</h3>
-          <div class="muted">${items.length} variant${items.length>1?'s':''} available</div>
-          <div class="row" style="margin:10px 0 12px">${chipLine.map(t=>`<span class="pill">${escapeHtml(t)}</span>`).join('')}</div>
-          <div class="row" style="justify-content:space-between">
-            <button class="btn ghost" onclick='openVariants(${JSON.stringify({slug:sl,product,title})})' style="--t:${ACCENTS[sl]||ACCENTS.other}">View variants</button>
-            <button class="btn primary" onclick='openOrder(${JSON.stringify(cheapest)})' style="--t:${ACCENTS[sl]||ACCENTS.other}">Order cheapest</button>
-          </div>
-          <div class="price-badge">${priceFmt(cheapest)}<span class="per">/ 1k</span></div>
-        </div>
-      `);
+  if (!elCat.dataset.filled) {
+    const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
+    for (const c of cats) {
+      const opt = document.createElement('option'); opt.value = c; opt.textContent = c; elCat.appendChild(opt);
     }
-
-    section.innerHTML=`
-      <div class="section-header">
-        <img src="/icons/${ICON_PATHS[slug]||ICON_PATHS.other}" alt="">
-        <div class="section-title">${slug}</div>
-        <div class="section-meta">${arr.length.toLocaleString()} services</div>
-        <div class="chev">▾</div>
-      </div>
-      <div class="section-body" style="${COLLAPSED.has(slug)?'display:none':''}">
-        <div class="grid">${cards.join('')}</div>
-      </div>
-    `;
-    section.querySelector('.section-header').addEventListener('click',()=>{
-      if(COLLAPSED.has(slug)) COLLAPSED.delete(slug); else COLLAPSED.add(slug); render();
-    });
-
-    elSections.appendChild(section);
+    elCat.dataset.filled = '1';
   }
 }
 
-/* modal: variants */
-function priceFmt(s){return (typeof s?.price_per_1k==='number'&&isFinite(s.price_per_1k))?`$${s.price_per_1k.toFixed(2)}`:'-';}
-function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
+function renderServices(services) {
+  elGrid.innerHTML = services.map(s => {
+    const catMeta = CAT.pick(s.category || s.name || '');
+    const tags = [
+      ...(s.tags || []),
+      ...parseTags(`${s.name} ${s.description || ''}`)
+    ].slice(0,6); // cap to keep it tidy
 
-function openVariants(meta){
-  const {slug, product, title}=meta||{};
-  modalTitle.textContent = title || 'Variants';
-  variantRows.innerHTML = '';
+    return `
+      <div class="card">
+        <h3>
+          <span class="brand">[DropSource]</span> — ${escapeHtml(s.name ?? s.title ?? "Service")}
+        </h3>
 
-  const variants = ALL_SERVICES.filter(s=>{
-    const sl = platformOf(s.category||s.name||'');
-    const prod = extractProduct(s.name||'', s.category||'');
-    return sl===slug && prod===product;
+        <div class="row" style="margin:6px 0 8px">
+          <span class="catchip" style="border-color:${shade(catMeta.color, -35)};background:${shade(catMeta.color, -92)};color:${catMeta.color}">
+            <img src="/icons/${catMeta.icon}" alt="" />
+            <span>${catMeta.name}</span>
+          </span>
+          <span class="pill">Min ${s.min}</span>
+          <span class="pill">Max ${s.max}</span>
+          ${s.dripfeed ? '<span class="pill" style="'+tagStyle('dripfeed')+'">Dripfeed</span>' : ''}
+          ${s.refill ? '<span class="pill" style="'+tagStyle('refill')+'">Refill</span>' : ''}
+        </div>
+
+        <div class="tags">
+          ${tags.map(t => `<span class="pill" style="${tagStyle(t)}">${escapeHtml(t)}</span>`).join('')}
+        </div>
+
+        <div class="row" style="justify-content:space-between;margin-top:6px">
+          <div><strong>$${Number(s.price_per_1k).toFixed(2)}</strong> <span class="muted">/ 1k</span></div>
+          <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// tiny color darkener for chip backgrounds
+function shade(hex, amt){
+  try{
+    let c=hex.replace('#',''); if(c.length===3) c=c.split('').map(x=>x+x).join('');
+    let r=parseInt(c.slice(0,2),16), g=parseInt(c.slice(2,4),16), b=parseInt(c.slice(4,6),16);
+    r=Math.max(0,Math.min(255,r+amt)); g=Math.max(0,Math.min(255,g+amt)); b=Math.max(0,Math.min(255,b+amt));
+    return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }catch(e){return 'var(--chip-bg)'}
+}
+
+/* -------------------- ORDER FLOW -------------------- */
+async function placeOrder(serviceId, link, quantity, runs, interval) {
+  const res = await fetch('/api/order', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ service: serviceId, link, quantity, runs, interval })
   });
-
-  for(const s of variants){
-    const chips = renderQualChips(s);
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(s.name||s.title||'')}</td>
-      <td>${chips.map(t=>`<span class="pill">${escapeHtml(t)}</span>`).join('')}</td>
-      <td>${s.min??''}</td>
-      <td>${s.max?Number(s.max).toLocaleString():''}</td>
-      <td>${priceFmt(s)}</td>
-      <td><button class="btn primary" style="--t:${ACCENTS[slug]||ACCENTS.other}" onclick='openOrder(${JSON.stringify(s)})'>Order</button></td>
-    `;
-    variantRows.appendChild(tr);
-  }
-  modalWrap.style.display='flex';
-}
-modalClose.addEventListener('click',()=>modalWrap.style.display='none');
-modalWrap.addEventListener('click',(e)=>{ if(e.target===modalWrap) modalWrap.style.display='none'; });
-
-/* mock order flow (same as before) */
-async function placeOrder(id,link,qty,runs,interval){
-  const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:id,link,quantity:qty,runs,interval})});
   return res.json();
 }
 function openOrder(svc){
-  const link=prompt('Paste the target link (post/profile URL):'); if(!link) return;
-  const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
-  if(!qty||qty<svc.min||qty>svc.max){ alert('Quantity out of range'); return; }
-  placeOrder(svc.id,link,qty).then(r=>{
+  const link = prompt('Paste the target link (post/profile URL):');
+  if(!link) return;
+  const qty = Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
+  if(!qty || qty < svc.min || qty > svc.max){ alert('Quantity out of range'); return; }
+  placeOrder(svc.id, link, qty).then(r=>{
     if(r.error) alert('Error: '+r.error);
     else alert('Order placed! ID: '+r.order);
   }).catch(e=>alert('Network issue: '+e.message));
 }
 
-/* fetch & events */
-async function fetchServices(){
-  try{
-    const res=await fetch('/api/smm');
-    if(!res.ok) throw new Error(`API ${res.status}`);
-    const data=await res.json();
-    ALL_SERVICES=Array.isArray(data)?data:[];
-    render();
-  }catch(err){elErr.textContent='Load error: '+(err?.message||err);}
-}
-
-elQ.addEventListener('input', render);
-elReload.addEventListener('click', fetchServices);
-elExpandAll.addEventListener('click', ()=>{ COLLAPSED.clear(); render(); });
-elCollapseAll.addEventListener('click', ()=>{
-  const keys=[...groupByPlatform(ALL_SERVICES).keys()];
-  COLLAPSED=new Set(keys); render();
-});
-
-/* boot */
+/* -------------------- WIRE UP -------------------- */
+elQ.addEventListener('input', () => fetchServices());
+elCat.addEventListener('change', () => fetchServices());
+elReload.addEventListener('click', () => fetchServices());
 fetchServices();
 </script>
 </body>
