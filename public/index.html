@@ -72,6 +72,7 @@ let ALL_SERVICES = [];
 let ACTIVE_CAT = '';
 
 const ICON_MAP = {
+  // socials
   instagram: 'instagram.svg',
   tiktok: 'tiktok.svg',
   youtube: 'youtube.svg',
@@ -80,52 +81,52 @@ const ICON_MAP = {
   twitter: 'specialtwitter.svg',
   x: 'x.svg',
   spotify: 'spotify.svg',
+  soundcloud: 'soundcloud.svg',
+  snapchat: 'snapchat.svg',
   threads: 'threads.svg',
   reddit: 'reddit.svg',
   linkedin: 'linkedin.svg',
-  soundcloud: 'soundcloud.svg',
-  snapchat: 'snapchat.svg',
   twitch: 'twitch.svg',
   pinterest: 'pinterest.svg',
   discord: 'discord.svg',
   quora: 'quora.svg',
-  kick: 'kick.svg',
-  audiomack: 'audiomack.svg',
-  clubhouse: 'clubhouse.svg',
-  vimeo: 'vimeo.svg',
   tumblr: 'tumblr.svg',
-  shazam: 'shazam.svg',
-  imdb: 'imdb.svg',
+  vimeo: 'vimeo.svg',
   okru: 'okru.svg',
   vk: 'vkontakte.svg',
+  kick: 'kick.svg',
+  clubhouse: 'clubhouse.svg',
+  audiomack: 'audiomack.svg',
+
+  // streaming / media
   dailymotion: 'dailymotion.svg',
-  rumble: 'rumble.svg',
   reverbnation: 'reverbnation.svg',
   tidal: 'tidal.svg',
-  crypto: 'crypto.svg',
-  datpiff: 'datpiff.svg',
-  exchange: 'exchange.svg',
-  geotarget: 'geotarget.svg',
+  shazam: 'shazam.svg',
+  imdb: 'imdb.svg',
+  rumble: 'rumble.svg',
+
+  // smm specials
   massdm: 'massdm.svg',
   mixcloud: 'mixcloud.svg',
-  onwebsite: 'onwebsite.svg',
-  podcast: 'podcast.svg',
-  rumble: 'rumble.svg',
+  exchange: 'exchange.svg',
+  geotarget: 'geotarget.svg',
+  googlereviews: 'googlereviews.svg',
+  ownwebsite: 'onwebsite.svg',
   websitepremium: 'websitepremium.svg',
   webtraffic: 'webtraffic.svg',
+  worldwide: 'webtraffic.svg',
+  worldwide_mobile: 'mobile.svg',
+  mobile: 'mobile.svg',
+  crypto: 'crypto.svg',
+  datpiff: 'datpiff.svg',
   vpn: 'vpn.svg',
-  whatsapp: 'whatsapp.svg',
-  special: 'specialservices.svg'
+  specials: 'specialservices.svg'
 };
 
-function catIcon(name=''){
-  const n = name.toLowerCase();
-  for (const key in ICON_MAP) {
-    if (n.includes(key)) {
-      return `/icons/${ICON_MAP[key]}`;
-    }
-  }
-  return '/icons/specialservices.svg';
+function catIcon(cat){
+  const slug = cat.toLowerCase().replace(/[^a-z0-9]/g,''); // strip weird chars
+  return ICON_MAP[slug] ? `/icons/${ICON_MAP[slug]}` : '/icons/specialservices.svg';
 }
 
 function normalizeName(x) {
