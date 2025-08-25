@@ -1,18 +1,31 @@
 // api/_lib.ts
-// tiny helper to make sure the user + wallet rows exist
-type UserLite = { id: string; email?: string | null };
-type SB = any; // keep loose for now to avoid pulling supabase types
 
-export async function ensureUserAndWallet(sb: SB, user: UserLite) {
-  // upsert user row (id is PK in your schema)
+// super light types so TS chills out
+export type UserLite = {
+  id: string;
+  email?: string | null;
+};
+
+// not pulling full supabase types—keep loose
+export type SB = any;
+
+/**
+ * Ensure the user exists in `users` and has a `wallets` row.
+ * Safe to call on every request.
+ */
+export async function ensureUserAndWallet(sb: SB, user: UserLite): Promise<void> {
+  // upsert the user
   try {
-    await sb.from('users')
+    await sb
+      .from('users')
       .upsert({ id: user.id, email: user.email ?? null })
       .select()
       .single();
-  } catch { /* ignore if already exists */ }
+  } catch {
+    // if row exists already, ignore
+  }
 
-  // does wallet exist?
+  // does a wallet exist?
   const { data: rows } = await sb
     .from('wallets')
     .select('id')
