@@ -1,549 +1,149 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>DropSource — SMM</title>
-<style>
-  :root{
-    --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3;
-    --brand:#59a0ff; --accent:#8b5cf6; --rule:#26282d;
-    --grad-1:#2a2b45; --grad-2:#1c1d31;
-    --ring-blue: rgba(89,160,255,.45);
-    --ring-purple: rgba(139,92,246,.45);
-    --pill-qual: #243147;
-    --pill-fast: #2a3b2a;
-    --pill-refill:#352a3d;
-    --pill-geo:#0e3b3f;
-    --pill-country:#12344a;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
-  header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule)}
-  .container{max-width:1100px;margin:0 auto;padding:16px}
-
-  input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
-  button{cursor:pointer}
-  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
-  .ghost{background:#0f1117;border:1px solid #2a2d34}
-  .toolbar .count{color:var(--muted);font-size:12px}
-  .ghost img.ico{width:14px;height:14px;margin-right:6px;vertical-align:middle}
-
-  /* sections */
-  .section{border:none;border-radius:14px;overflow:hidden;margin-bottom:16px;background:transparent}
-  .section-header{
-    display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;
-    background:linear-gradient(180deg,#1a1b2a,#141524); border:1px solid #26273a;border-radius:14px;
-  }
-  .section-header img{width:18px;height:18px}
-  .section-title{font-weight:600}
-  .section-meta{margin-left:auto;color:var(--muted);font-size:12px}
-  .chev{transition:.15s transform}
-  .collapsed .chev{transform:rotate(-90deg)}
-  .section-body{padding:12px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-
-  /* cards — DS vibe */
-  .card{
-    position:relative;border-radius:18px;padding:18px 16px 52px;
-    background: radial-gradient(120% 140% at 100% 0%, var(--grad-1) 0%, var(--grad-2) 60%);
-    border:1px solid #2b2d3d;
-    box-shadow:0 0 0 1px rgba(255,255,255,.02) inset, 0 8px 20px rgba(0,0,0,.35);
-    transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease, outline .12s ease;
-    outline: 0 solid transparent;
-  }
-  .card:hover{
-    transform:translateY(-2px);
-    border-color:#3a3d57;
-    box-shadow:0 0 0 1px rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45), 0 0 0 3px var(--ring, var(--ring-purple));
-  }
-  /* focus/selected highlight for keyboard users too */
-  .card:focus-within{
-    outline:3px solid var(--ring, var(--ring-blue));
-    outline-offset: 2px;
-  }
-  .card h3{margin:0 0 8px 0;font-size:15px;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .muted{color:var(--muted)}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-
-  .pill{
-    padding:3px 8px;border-radius:999px;border:1px solid #2b2d3d;color:#c8cbe6;font-size:12px;
-    background:#1b1c2a;
-  }
-  .pill.qual{background:var(--pill-qual)}
-  .pill.fast{background:var(--pill-fast)}
-  .pill.refill{background:var(--pill-refill)}
-  .pill.geo{background:var(--pill-geo); color:#9be8f1; border-color:#1b5a5f; font-weight:600}
-  .pill.country{background:var(--pill-country); color:#a5d8ff; border-color:#1a4c66; font-weight:600}
-
-  .brand{color:var(--brand)}
-
-  /* price badge */
-  .price-badge{
-    position:absolute;left:14px;bottom:12px;padding:6px 10px;border-radius:10px;
-    background:#0f1020;border:1px solid #343654;font-weight:700;
-    box-shadow:0 4px 16px rgba(0,0,0,.4);
-  }
-  .price-badge .per{color:var(--muted);font-weight:500;margin-left:4px}
-
-  /* modal */
-  .modal-backdrop{
-    position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;
-  }
-  .modal{width:min(920px,100%);background:#0f1119;border:1px solid #2a2d34;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
-  .modal header{display:flex;gap:8px;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #222532}
-  .modal header h4{margin:0;font-size:16px}
-  .modal .body{padding:12px 12px 16px;max-height:65vh;overflow:auto}
-  table{width:100%;border-collapse:separate;border-spacing:0 8px}
-  th,td{font-size:13px;text-align:left;padding:8px 10px;background:#141728;border:1px solid #25283a}
-  th{position:sticky;top:0;background:#171a2b;z-index:1}
-  tr td:first-child, tr th:first-child{border-top-left-radius:8px;border-bottom-left-radius:8px}
-  tr td:last-child, tr th:last-child{border-top-right-radius:8px;border-bottom-right-radius:8px}
-  .chipline{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{padding:2px 6px;border-radius:999px;background:#1b1c2a;border:1px solid #2b2d3d;color:#c8cbe6;font-size:11px}
-  .chip.geo{background:var(--pill-geo); color:#9be8f1; border-color:#1b5a5f; font-weight:600}
-  .chip.country{background:var(--pill-country); color:#a5d8ff; border-color:#1a4c66; font-weight:600}
-  .close{background:#121422;border:1px solid #2a2d34}
-
-  .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
-  #err{margin-top:12px;color:#ff6b6b;font-size:12px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DropSource — SMM</title>
+  <style>
+    :root{
+      --bg:#0d0f14;--card:#151a21;--muted:#9aa4b2;--text:#e7ecf3;
+      --brand:#7c6cff;--pill:#222939;--good:#2fcc71;--warn:#f2b84b;--bad:#ff6b6b;
+      --blue:#4fa3ff;--purple:#7c6cff;--teal:#45d0c4;--rose:#ff6bcb;
+      --ring:#242a38; --chip:#22283a; --chip-text:#d7def0;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial}
+    a{color:inherit}
+    .container{max-width:1120px;margin:0 auto;padding:18px 16px 64px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .brand{display:flex;gap:10px;align-items:center}
+    .brand .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#8b7bff 0%,#3c46ff 100%);display:inline-block}
+    h1{font-size:16px;margin:0;font-weight:700}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .btn{background:#1b2130;border:1px solid var(--ring);color:#dfe6f4;border-radius:10px;padding:8px 10px;cursor:pointer}
+    .btn.primary{background:linear-gradient(180deg,#2a3350,#20273b);border-color:#2c3550}
+    .search{flex:1;min-width:220px;max-width:380px}
+    .search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--ring);background:#121722;color:var(--text)}
+    select{padding:9px 10px;border-radius:10px;border:1px solid var(--ring);background:#121722;color:var(--text)}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 18px}
+    .chip{display:flex;align-items:center;gap:6px;border:1px solid var(--ring);background:var(--chip);padding:8px 10px;border-radius:999px;cursor:pointer}
+    .chip.active{outline:2px solid var(--purple)}
+    .chip img{width:16px;height:16px;opacity:.9}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+    @media (max-width:980px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:680px){.grid{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,#171d29,#141a24);border-radius:16px;border:1px solid #222a3b}
+    .card-inner{padding:14px 14px 12px;position:relative}
+    .card h3{margin:0 0 8px;font-size:14px}
+    .card .meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+    .pill{background:var(--pill);border:1px solid var(--ring);padding:2px 8px;border-radius:999px}
+    .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:10px}
+    .price{font-weight:800;font-feature-settings:"tnum" 1;letter-spacing:.2px}
+    .price small{color:var(--muted);font-weight:600}
+    .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .tag{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid transparent}
+    .tag.fast{background:#132f2a;border-color:#1c4d41;color:#9af3d9}
+    .tag.refill{background:#20233c;border-color:#30376b;color:#bcc8ff}
+    .tag.drip{background:#2a2332;border-color:#54346e;color:#e1b6ff}
+    .tag.geo{background:#252a15;border-color:#495d1d;color:#c9f07a}
+    .tag.real{background:#212c37;border-color:#2e495e;color:#add9ff}
+    .tag.cheap{background:#2b221d;border-color:#5a3a2c;color:#ffc6a6}
+    .sublabel{font-size:11px;color:#8fa0b6;margin-left:8px}
+    .faded{opacity:.72}
+    .card.variant-open{box-shadow:0 0 0 2px #2a2f48, 0 0 0 4px rgba(124,108,255,.25)}
+  </style>
 </head>
 <body>
-<header>
-  <div><strong class="brand">DropSource</strong> · Boosts</div>
-  <div class="row">
-    <input id="q" placeholder="Search services…"/>
-    <select id="sort">
-      <option value="price_asc">Price: Low → High</option>
-      <option value="price_desc">Price: High → Low</option>
-      <option value="alpha">Alphabetical</option>
-    </select>
-    <button id="reload">Reload</button>
-  </div>
-</header>
-
-<div class="container">
-  <div class="toolbar">
-    <button id="showAll" class="ghost"><img src="/icons/allproducts.svg" class="ico" alt=""> All products</button>
-    <button id="expandAll" class="ghost">Expand all</button>
-    <button id="collapseAll" class="ghost">Collapse all</button>
-    <button id="toggleView" class="ghost">Show variants inline</button>
-    <span class="count" id="totalCount"></span>
-  </div>
-  <div id="sections"></div>
-  <div id="err"></div>
-</div>
-
-<!-- VARIANT MODAL -->
-<div id="modalWrap" class="modal-backdrop" role="dialog" aria-modal="true">
-  <div class="modal">
+  <div class="container">
     <header>
-      <h4 id="modalTitle">Variants</h4>
-      <div class="row">
-        <select id="modalSort">
+      <div class="brand">
+        <span class="logo"></span>
+        <h1>DropSource · Boosts</h1>
+      </div>
+      <div class="toolbar">
+        <div class="search"><input id="q" placeholder="Search services…" /></div>
+        <select id="sort">
           <option value="price_asc">Price: Low → High</option>
           <option value="price_desc">Price: High → Low</option>
-          <option value="alpha">Alphabetical</option>
+          <option value="name_asc">Name: A → Z</option>
+          <option value="name_desc">Name: Z → A</option>
         </select>
-        <button id="modalClose" class="close">Close</button>
+        <button class="btn primary" id="reload">Reload</button>
       </div>
     </header>
-    <div class="body">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:38%">Variant</th>
-            <th>Tags</th>
-            <th>Min</th>
-            <th>Max</th>
-            <th>Price /1k</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="variantRows"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
 
-<div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
+    <div id="error" class="alert" style="display:none;color:#ff6b6b"></div>
+    <div id="count" class="sublabel faded"></div>
+    <div id="grid" class="grid"></div>
+  </div>
 
 <script>
-/* DOM refs */
-const elQ = document.getElementById('q');
-const elSort = document.getElementById('sort');
-const elSections = document.getElementById('sections');
-const elReload = document.getElementById('reload');
-const elErr = document.getElementById('err');
-const elTotal = document.getElementById('totalCount');
-const elExpandAll = document.getElementById('expandAll');
-const elCollapseAll = document.getElementById('collapseAll');
-const elShowAll = document.getElementById('showAll');
-const elToggleView = document.getElementById('toggleView');
-const modalWrap = document.getElementById('modalWrap');
-const modalClose = document.getElementById('modalClose');
-const modalTitle = document.getElementById('modalTitle');
-const modalSort = document.getElementById('modalSort');
-const variantRows = document.getElementById('variantRows');
+const SERVICES_URL = '/api/smm?action=services';
 
-/* state */
-let ALL_SERVICES = [];
-let COLLAPSED = new Set();
-let SHOW_VARIANTS_INLINE = false; // default collapsed
-let currentModalMeta = null;
+const $grid   = document.getElementById('grid');
+const $q      = document.getElementById('q');
+const $sort   = document.getElementById('sort');
+const $error  = document.getElementById('error');
+const $count  = document.getElementById('count');
+const $reload = document.getElementById('reload');
 
-/* ===== ICONS / COLORS / RULES (same as before) ===== */
-const ICON_PATHS = {
-  instagram:'instagram.svg', tiktok:'tiktok.svg', youtube:'youtube.svg', facebook:'facebook.svg',
-  twitter:'specialtwitter.svg', telegram:'telegram.svg', spotify:'spotify.svg', threads:'threads.svg',
-  soundcloud:'soundcloud.svg', pinterest:'pinterest.svg', reddit:'reddit.svg', linkedin:'linkedin.svg',
-  twitch:'twitch.svg', vk:'vkontakte.svg', okru:'okru.svg', audiomack:'audiomack.svg', reverbnation:'reverbnation.svg',
-  tidal:'tidal.svg', shazam:'shazam.svg', dailymotion:'dailymotion.svg', datpiff:'datpiff.svg',
-  mixcloud:'mixcloud.svg', rumble:'rumble.svg', imdb:'imdb.svg',
-  maskedtraffic:'maskedtraffic.svg', websitepremium:'websitepremium.svg',
-  webtraffic:'webtraffic.svg', webtrafficgeo:'webtraffic.svg', ownwebsite:'ownwebsite.svg',
-  other:'other.svg'
-};
-const PLATFORM_ACCENTS = {
-  instagram:'#e1306c', youtube:'#ff0033', tiktok:'#29bdb1', facebook:'#1877f2',
-  twitter:'#1d9bf0', spotify:'#1db954', telegram:'#2aabee', threads:'#ffffff',
-  soundcloud:'#ff5500', pinterest:'#e60023', reddit:'#ff4500', linkedin:'#0a66c2',
-  twitch:'#9146ff', vk:'#4c75a3', okru:'#ed812b', audiomack:'#f2a900', reverbnation:'#e31e24',
-  tidal:'#0a0a0a', shazam:'#08f', dailymotion:'#0066dc', datpiff:'#86c232',
-  mixcloud:'#52aad8', rumble:'#85c742', imdb:'#f5c518', maskedtraffic:'#8b5cf6',
-  websitepremium:'#a78bfa', webtraffic:'#8b5cf6', webtrafficgeo:'#8b5cf6', ownwebsite:'#8b5cf6',
-  other:'#8b5cf6'
-};
-const PLATFORM_RULES = [
-  {slug:'instagram',re:/\binstagram\b/i},{slug:'tiktok',re:/\btik\s*tok\b|\btiktok\b/i},
-  {slug:'youtube',re:/\byou\s*tube\b|\byoutube\b/i},{slug:'facebook',re:/\bfacebook\b|\bfb\b/i},
-  {slug:'telegram',re:/\btelegram\b/i},{slug:'twitter',re:/\btwitter\b/i},{slug:'spotify',re:/\bspotify\b/i},
-  {slug:'threads',re:/\bthreads\b/i},{slug:'soundcloud',re:/\bsound\s*cloud\b|\bsoundcloud\b/i},
-  {slug:'pinterest',re:/\bpint?erest\b/i},{slug:'reddit',re:/\breddit\b/i},{slug:'linkedin',re:/\blinked?in\b/i},
-  {slug:'twitch',re:/\btwitch\b/i},{slug:'vk',re:/\bvk(?:ontakte)?\b/i},{slug:'okru',re:/\bok\.?ru\b|\bokru\b/i},
-  {slug:'audiomack',re:/\baudio\s*mack\b/i},{slug:'reverbnation',re:/\breverb\s*nation\b/i},
-  {slug:'tidal',re:/\btidal\b/i},{slug:'shazam',re:/\bshazam\b/i},{slug:'dailymotion',re:/\bdaily\s*motion\b/i},
-  {slug:'datpiff',re:/\bdatpiff\b/i},{slug:'mixcloud',re:/\bmixcloud\b/i},{slug:'rumble',re:/\brumble\b/i},
-  {slug:'imdb',re:/\bimdb\b/i},
-  {slug:'maskedtraffic',re:/\bmasked\b.*\btraffic\b/i},{slug:'websitepremium',re:/\bwebsite\b.*\bpremium\b/i},
-  {slug:'webtrafficgeo',re:/\bweb\b.*\bgeo\b.*\btraffic\b/i},{slug:'webtraffic',re:/\bweb\b.*\btraffic\b/i},
-  {slug:'ownwebsite',re:/\bown\b.*\bwebsite\b/i},
-];
-function getPlatformSlug(text=''){const t=String(text||'').toLowerCase();for(const r of PLATFORM_RULES){if(r.re.test(t))return r.slug}return'other'}
-function slugLabel(slug){
-  const map={okru:'OK.ru',vk:'VK',soundcloud:'SoundCloud',reverbnation:'ReverbNation',
-    datpiff:'DatPiff',webtraffic:'Web Traffic',webtrafficgeo:'Web Traffic (Geo)',
-    websitepremium:'Website Premium',maskedtraffic:'Masked Traffic',ownwebsite:'Own Website'};
-  return map[slug]||slug.charAt(0).toUpperCase()+slug.slice(1);
+let RAW = [];
+
+function fmtMoney(n){
+  if (n == null || !isFinite(n)) return '—';
+  return `$${(Math.round(n * 100)/100).toFixed(2)}`;
 }
 
-/* -------- title & product -------- */
-const PRODUCT_WORDS=['Followers','Likes','Views','Comments','Subscribers','Saves','Story Views','Impressions','Shares','Plays','Streams','Downloads','Members','Votes','Service'];
-function cleanNoise(str=''){return String(str).replace(/\[.*?\]/g,' ').replace(/% ?\d{2,3}|%100/gi,' ')
-  .replace(/\bWORKING AFTER UPDATE\b/gi,' ').replace(/\bProvider Service\b/gi,' ')
-  .replace(/\bR\d+\b/g,' ').replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
-  .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ').replace(/\s+/g,' ').trim()}
-function extractProduct(name='',cat=''){
-  const hay=`${name} ${cat}`.toLowerCase();
-  for(const w of PRODUCT_WORDS){const re=new RegExp(`\\b${w.toLowerCase().replace(/\s+/g,'\\s*')}\\b`,'i');if(re.test(hay)) return w;}
-  if(/follow/i.test(hay))return'Followers'; if(/like/i.test(hay))return'Likes'; if(/view/i.test(hay))return'Views';
-  if(/comment/i.test(hay))return'Comments'; if(/sub/i.test(hay))return'Subscribers'; if(/save/i.test(hay))return'Saves';
-  if(/impression/i.test(hay))return'Impressions'; if(/share/i.test(hay))return'Shares'; if(/play|stream/i.test(hay))return'Plays';
-  if(/download/i.test(hay))return'Downloads'; return'Service';
-}
-function prettyTitle(svc){const slug=getPlatformSlug(svc.category||svc.name||'other');const platform=slugLabel(slug);const product=extractProduct(cleanNoise(svc.name||''), svc.category||'');return `${platform} ${product}`}
-
-/* -------- dedupe -------- */
-function mildClean(str=''){return String(str).replace(/\d{2}\.\d{2}\.\d{4}/g,' ').replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ').replace(/\s+/g,' ').trim().toLowerCase()}
-function dedupeKey(s){const plat=getPlatformSlug(s.category||s.name||'');const prod=extractProduct(s.name||'', s.category||'');const title=mildClean(cleanNoise(s.name||s.title||''));const mmpp=`${s.min}|${s.max}|${s.price_per_1k}`;return `${plat}|${prod}|${title}|${mmpp}`}
-function uniqueServices(list){const seen=new Set();return list.filter(s=>{const k=dedupeKey(s);if(seen.has(k))return false;seen.add(k);return true;});}
-
-/* -------- chips -------- */
-const COUNTRY_WORDS=['usa','uk','germany','france','italy','spain','canada','brazil','india','japan','korea','korean','turkey','mexico','australia','russia','uae','saudi','indonesia','vietnam','thailand','philippines'];
-function chipListForName(name){
-  const n=(name||'').toLowerCase(); const out=[];
-  if(/ultra\s*hq|premium/.test(n)) out.push({t:'Premium',c:'qual'});
-  if(/\bhq\b|high\s*quality/.test(n)) out.push({t:'HQ',c:'qual'});
-  if(/fast|instant|speed/i.test(n)) out.push({t:'Fast',c:'fast'});
-  if(/cheapest|cheap/i.test(n)) out.push({t:'Cheapest',c:'fast'});
-  if(/old\s*accounts?/i.test(n)) out.push({t:'Old Accounts',c:'qual'});
-  if(/verified/i.test(n)) out.push({t:'Verified',c:'qual'});
-  if(/\breal\b/.test(n)) out.push({t:'Real',c:'qual'});
-  if(/\bgeo\b/i.test(n)) out.push({t:'GEO',c:'geo'});
-  let country=null; for(const c of COUNTRY_WORDS){ if(n.includes(c)){ country=c.toUpperCase(); break; } }
-  if(country) out.push({t:country,c:'country'});
-  return out;
-}
-function renderQualChips(s){
-  const chips=[];
-  if (s.min) chips.push({t:`Min ${s.min}`});
-  if (s.max) chips.push({t:`Max ${Number(s.max).toLocaleString()}`});
-  if (s.dripfeed) chips.push({t:'Dripfeed',c:'fast'});
-  if (s.refill) chips.push({t:'Refill',c:'refill'});
-  chips.push(...chipListForName(s.name));
-  return chips.map(ch=>`<span class="pill ${ch.c||''}">${ch.t}</span>`);
-}
-function accentFor(svc){const slug=getPlatformSlug(svc.category||svc.name||'');return PLATFORM_ACCENTS[slug]||PLATFORM_ACCENTS.other}
-
-/* -------- fetch -------- */
-async function fetchServices(){
-  try{
-    const res=await fetch('/api/services'); if(!res.ok) throw new Error(`API ${res.status}`);
-    const data=await res.json();
-    ALL_SERVICES=uniqueServices(Array.isArray(data)?data:[]);
-    render();
-  }catch(err){elErr.textContent='Load error: '+(err?.message||err);}
-}
-
-/* -------- grouping & sorting -------- */
-function groupByPlatform(services, query=''){
-  const out=new Map();
-  services.forEach(s=>{
-    const hay=`${s.name||''} ${s.title||''} ${s.category||''}`.toLowerCase();
-    if(query && !hay.includes(query)) return;
-    const slug=getPlatformSlug(s.category||s.name||'');
-    if(!out.has(slug)) out.set(slug, []);
-    out.get(slug).push(s);
-  });
-  return out;
-}
-function groupIntoBases(services){
-  const bases = new Map();
-  for (const s of services){
-    const slug = getPlatformSlug(s.category||s.name||'');
-    const product = extractProduct(s.name||'', s.category||'');
-    const baseKey = `${slug}|${product}`;
-    if (!bases.has(baseKey)) bases.set(baseKey, { slug, product, items: []});
-    bases.get(baseKey).items.push(s);
-  }
-  return bases;
-}
-function cheapestOf(arr){return arr.reduce((a,b)=>(a?.price_per_1k??Infinity) <= (b?.price_per_1k??Infinity) ? a : b, null)}
-function cmpPriceAsc(a,b){return (a?.price_per_1k??Infinity)-(b?.price_per_1k??Infinity)}
-function cmpPriceDesc(a,b){return (b?.price_per_1k??-Infinity)-(a?.price_per_1k??-Infinity)}
-function sortServices(list, mode){
-  if(mode==='alpha') return [...list].sort((a,b)=>prettyTitle(a).localeCompare(prettyTitle(b)));
-  if(mode==='price_desc') return [...list].sort(cmpPriceDesc);
-  return [...list].sort(cmpPriceAsc); // default asc
-}
-function sortBasesByCheapest(bases, mode){
-  const arr=[...bases.values()];
-  const cmp=(x,y)=>{
-    const cx=cheapestOf(x.items), cy=cheapestOf(y.items);
-    if(mode==='alpha') return `${slugLabel(x.slug)} ${x.product}`.localeCompare(`${slugLabel(y.slug)} ${y.product}`);
-    if(mode==='price_desc') return cmpPriceDesc(cx,cy);
-    return cmpPriceAsc(cx,cy);
-  };
-  return arr.sort(cmp);
-}
-
-/* -------- render -------- */
 function render(){
-  const q=(elQ.value||'').toLowerCase();
-  const mode=elSort.value;
-  const platformGroups=groupByPlatform(ALL_SERVICES,q);
+  const q = ($q.value||'').toLowerCase();
+  let list = RAW.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    (s.category||'').toLowerCase().includes(q)
+  );
 
-  const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','pinterest','reddit','linkedin','twitch','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
-  const ordered=[...platformGroups.keys()].sort((a,b)=>{
-    const ai=priority.indexOf(a), bi=priority.indexOf(b);
-    if(ai!==-1 || bi!==-1) return (ai===-1?999:ai) - (bi===-1?999:bi);
-    return platformGroups.get(b).length - platformGroups.get(a).length;
+  if ($sort.value==='price_asc') list.sort((a,b)=>a.price_per_1k-b.price_per_1k);
+  if ($sort.value==='price_desc') list.sort((a,b)=>b.price_per_1k-a.price_per_1k);
+  if ($sort.value==='name_asc') list.sort((a,b)=>a.name.localeCompare(b.name));
+  if ($sort.value==='name_desc') list.sort((a,b)=>b.name.localeCompare(a.name));
+
+  $grid.innerHTML = '';
+  list.forEach(s=>{
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-inner">
+        <h3>[DropSource] — ${s.name}</h3>
+        <div class="meta"><span>${s.category}</span> · <span>Min ${s.min}</span> · <span>Max ${s.max}</span></div>
+        <div class="row">
+          <div class="price">${fmtMoney(s.price_per_1k)} <small>/1k</small></div>
+          <button class="btn sm">Order</button>
+        </div>
+      </div>
+    `;
+    $grid.appendChild(card);
   });
 
-  const total=[...platformGroups.values()].reduce((n,arr)=>n+arr.length,0);
-  elTotal.textContent = `${total.toLocaleString()} services`;
+  $count.textContent = `${list.length} services`;
+}
 
-  elSections.innerHTML='';
-  for(const slug of ordered){
-    let services=platformGroups.get(slug);
-    if(!services || !services.length) continue;
-
-    const section=document.createElement('section');
-    section.className='section'+(COLLAPSED.has(slug)?' collapsed':'');
-    section.dataset.slug=slug;
-
-    let bodyHtml='';
-    if (SHOW_VARIANTS_INLINE){
-      services = sortServices(services, mode);
-      bodyHtml = `<div class="grid">${services.map(cardHtmlFlat).join('')}</div>`;
-    } else {
-      const bases = groupIntoBases(services);
-      const sortedBases = sortBasesByCheapest(bases, mode);
-      bodyHtml = renderGroupedCardsSorted(sortedBases);
-    }
-
-    section.innerHTML=`
-      <div class="section-header">
-        <img src="/icons/${ICON_PATHS[slug]||ICON_PATHS.other}" alt="">
-        <div class="section-title">${slugLabel(slug)}</div>
-        <div class="section-meta">${services.length.toLocaleString()} ${SHOW_VARIANTS_INLINE?'items':'services'}</div>
-        <div class="chev">▾</div>
-      </div>
-      <div class="section-body" style="${COLLAPSED.has(slug)?'display:none':''}">
-        ${bodyHtml}
-      </div>
-    `;
-
-    section.querySelector('.section-header').addEventListener('click',()=>{
-      if(COLLAPSED.has(slug)){ COLLAPSED.delete(slug); } else { COLLAPSED.add(slug); }
-      render();
-      section.scrollIntoView({block:'start',behavior:'instant'});
-    });
-
-    elSections.appendChild(section);
+async function load(){
+  try{
+    $error.style.display='none';
+    const res = await fetch(SERVICES_URL, { method:'GET' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    RAW = await res.json();
+    render();
+  }catch(err){
+    $error.style.display='block';
+    $error.textContent = 'Load error: '+err.message;
   }
 }
 
-/* flat card */
-function cardHtmlFlat(s){
-  const titleText=prettyTitle(s);
-  const price=(typeof s.price_per_1k==='number'&&isFinite(s.price_per_1k))?`$${s.price_per_1k.toFixed(2)}`:'-';
-  const ring = accentFor(s) + '55';
-  return `
-    <div class="card" style="--ring:${ring}" tabindex="0">
-      <h3><span class="brand">[DropSource]</span> — ${escapeHtml(titleText)}</h3>
-      <div class="row" style="margin:10px 0 12px">${renderQualChips(s).join('')}</div>
-      <div class="row" style="justify-content:flex-end">
-        <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
-      </div>
-      <div class="price-badge">${price}<span class="per">/ 1k</span></div>
-    </div>
-  `;
-}
+$q.addEventListener('input', render);
+$sort.addEventListener('change', render);
+$reload.addEventListener('click', load);
 
-/* grouped cards */
-function renderGroupedCardsSorted(sortedBases){
-  const cards=[];
-  for (const base of sortedBases){
-    const {slug, product, items}=base;
-    // modal list sort follows global sort
-    const mode=elSort.value;
-    const sortedItems = sortServices(items, mode);
-    const cheapest = sortedItems[0];
-    const ring = (PLATFORM_ACCENTS[slug] || PLATFORM_ACCENTS.other) + '55';
-    const title = `${slugLabel(slug)} ${product}`;
-    const count = items.length;
-    const chips = summarizeVariantChips(sortedItems).map(t=>`<span class="pill ${t.c||''}">${t.t}</span>`).join('');
-    cards.push(`
-      <div class="card" style="--ring:${ring}" tabindex="0">
-        <h3><span class="brand">[DropSource]</span> — ${escapeHtml(title)}</h3>
-        <div class="muted">${count} variant${count>1?'s':''} available</div>
-        <div class="row" style="margin:10px 0 12px">${chips}</div>
-        <div class="row" style="justify-content:space-between">
-          <button onclick='openVariants(${JSON.stringify({title,slug})})'>View variants</button>
-          <button onclick='openOrder(${JSON.stringify(cheapest)})'>Order cheapest</button>
-        </div>
-        <div class="price-badge">${priceFmt(cheapest)}<span class="per">/ 1k</span></div>
-      </div>
-    `);
-  }
-  return `<div class="grid">${cards.join('')}</div>`;
-}
-function summarizeVariantChips(items){
-  const tags = new Map(); // text -> class
-  let minMin = Infinity, maxMax = 0;
-  for (const s of items){
-    minMin = Math.min(minMin, s.min||Infinity);
-    maxMax = Math.max(maxMax, s.max||0);
-    for (const t of chipListForName(s.name)){
-      if (!tags.has(t.t)) tags.set(t.t, t.c||'');
-    }
-    if (s.refill) tags.set('Refill','refill');
-    if (s.dripfeed) tags.set('Dripfeed','fast');
-  }
-  const out = [];
-  if (isFinite(minMin)) out.push({t:`Min ${minMin}`});
-  if (maxMax>0) out.push({t:`Max ${maxMax.toLocaleString()}`});
-  // prefer GEO/country visibility first
-  for (const [t,c] of tags){
-    if (c==='geo' || c==='country') out.push({t,c});
-    if (out.length>=6) break;
-  }
-  for (const [t,c] of tags){
-    if (c==='geo' || c==='country') continue;
-    if (out.length>=6) break;
-    out.push({t,c});
-  }
-  return out;
-}
-
-/* modal */
-function priceFmt(s){ return (typeof s?.price_per_1k==='number' && isFinite(s.price_per_1k)) ? `$${s.price_per_1k.toFixed(2)}` : '-'; }
-
-function openVariants(meta){
-  currentModalMeta = meta;
-  renderModal();
-  modalWrap.style.display='flex';
-}
-function renderModal(){
-  const {title, slug} = currentModalMeta||{};
-  modalTitle.textContent = title || 'Variants';
-  variantRows.innerHTML = '';
-
-  // find variants
-  const product = (title||'').split(' ').slice(1).join(' ');
-  let variants = ALL_SERVICES.filter(s=>getPlatformSlug(s.category||s.name||'')===slug && extractProduct(s.name||'', s.category||'')===product);
-
-  // sort per modal sort
-  const mode = modalSort.value;
-  variants = sortServices(variants, mode);
-
-  for (const s of variants){
-    const cleaned = cleanNoise(s.name||s.title||'');
-    // tag classes
-    const chipHtml = chipListForName(s.name).map(x=>{
-      const cls = (x.c==='geo'?'chip geo': x.c==='country'?'chip country':'chip');
-      return `<span class="${cls}">${x.t}</span>`;
-    }).join('');
-    const mm = `<div class="chipline">${chipHtml}${s.refill?'<span class="chip">Refill</span>':''}${s.dripfeed?'<span class="chip">Dripfeed</span>':''}</div>`;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(cleaned)}</td>
-      <td>${mm}</td>
-      <td>${s.min ?? ''}</td>
-      <td>${s.max ? Number(s.max).toLocaleString() : ''}</td>
-      <td>${priceFmt(s)}</td>
-      <td><button onclick='openOrder(${JSON.stringify(s)})'>Order</button></td>
-    `;
-    variantRows.appendChild(tr);
-  }
-}
-modalClose.addEventListener('click', ()=> modalWrap.style.display='none');
-modalWrap.addEventListener('click', (e)=>{ if(e.target===modalWrap) modalWrap.style.display='none'; });
-modalSort.addEventListener('change', renderModal);
-
-/* utils */
-function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
-async function placeOrder(id,link,qty,runs,interval){const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:id,link,quantity:qty,runs,interval})});return res.json();}
-function openOrder(svc){
-  const link=prompt('Paste the target link (post/profile URL):'); if(!link) return;
-  const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
-  if(!qty||qty<svc.min||qty>svc.max){ alert('Quantity out of range'); return; }
-  placeOrder(svc.id,link,qty).then(r=>{
-    if(r.error) alert('Error: '+r.error);
-    else alert('Order placed! ID: '+r.order);
-  }).catch(e=>alert('Network issue: '+e.message));
-}
-
-/* events */
-elQ.addEventListener('input', render);
-elSort.addEventListener('change', render);
-elReload.addEventListener('click', fetchServices);
-elExpandAll.addEventListener('click', ()=>{ COLLAPSED.clear(); render(); });
-elCollapseAll.addEventListener('click', ()=>{
-  const slugs=[...document.querySelectorAll('.section')].map(s=>s.dataset.slug);
-  COLLAPSED=new Set(slugs); render();
-});
-elShowAll.addEventListener('click', ()=>{ elQ.value=''; COLLAPSED.clear(); render(); });
-elToggleView.addEventListener('click', ()=>{
-  SHOW_VARIANTS_INLINE = !SHOW_VARIANTS_INLINE;
-  elToggleView.textContent = SHOW_VARIANTS_INLINE ? 'Collapse variants' : 'Show variants inline';
-  render();
-});
-
-/* boot */
-fetchServices();
+load();
 </script>
 </body>
 </html>
