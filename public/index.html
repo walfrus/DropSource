@@ -155,11 +155,21 @@ function parseTags(s=''){
 async function fetchServices() {
   const q = encodeURIComponent(elQ.value || '');
   const cat = encodeURIComponent(elCat.value || '');
-  const url = `${API}?action=services${q ? `&q=${q}` : ''}${cat ? `&category=${cat}` : ''}`;
+  const url = `${API}?action=services${q ? '&q='+q : ''}${cat ? '&category='+cat : ''}`;
   const res = await fetch(url);
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    toast('Failed to parse services');
+    return;
+  }
+  if (!Array.isArray(data)) {
+    console.warn('Unexpected services payload:', data);
+    toast(data?.error || 'Failed to load services');
+    return;
+  }
   renderServices(data);
-
   if (!elCat.dataset.filled) {
     const cats = [...new Set(data.map(s => s.category).filter(Boolean))].sort();
     for (const c of cats) {
