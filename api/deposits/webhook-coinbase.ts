@@ -1,40 +1,45 @@
 // api/deposits/webhook-coinbase.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
 import crypto from 'crypto';
+import { buffer } from 'micro';
 import { sb } from '../../lib/db';
 
 export const config = { api: { bodyParser: false } };
 
-function readRaw(req: any): Promise<Buffer> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer)=>chunks.push(c));
-    req.on('end', ()=>resolve(Buffer.concat(chunks)));
-  });
-}
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') return res.status(405).end();
 
-export default async function handler(req: any, res: any) {
-  const raw = await readRaw(req);
-  const sig = req.headers['x-cc-webhook-signature'] as string;
-  const secret = process.env.COINBASE_COMMERCE_WEBHOOK_SECRET!;
-  const hmac = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  const sig = (req.headers['x-cc-webhook-signature'] as string) || '';
+  const secret = process.env.COINBASE_COMMERCE_WEBHOOK_SECRET as string;
+  if (!sig || !secret) return res.status(400).end();
 
-  if (hmac !== sig) return res.status(400).send('bad sig');
+  const raw = (await buffer(req)).toString('utf8');
+  const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  if (sig !== expected) return res.status(401).end();
 
-  const evt = JSON.parse(raw.toString());
-  const type = evt.event?.type;           // e.g. 'charge:confirmed'
-  const data = evt.event?.data;
-  const depositId = data?.metadata?.depositId;
+  const evt = JSON.parse(raw);
+  const type = evt?.event?.type;
+  const charge = evt?.event?.data;
 
-  if ((type === 'charge:confirmed' || type === 'charge:resolved') && depositId) {
-    const { data: dep } = await sb.from('deposits').select('*').eq('id', depositId).single();
-    if (dep && dep.status === 'pending') {
-      await sb.rpc('perform_wallet_credit', {
-        p_user_id: dep.user_id,
-        p_amount_cents: dep.amount_cents,
-        p_ref: data?.id || 'coinbase',
-        p_meta: { provider: 'coinbase', type }
-      });
-      await sb.from('deposits').update({ status: 'confirmed' }).eq('id', depositId);
+  // We stored provider_id (charge.id) on the deposit
+  const providerId = charge?.id as string | undefined;
+
+  if (type === 'charge:confirmed' || type === 'charge:resolved') {
+    if (providerId) {
+      const { data: dep } = await sb
+        .from('deposits').select('*')
+        .eq('provider_id', providerId).single();
+
+      if (dep && dep.status !== 'completed') {
+        // credit wallet
+        await sb.rpc('increment_wallet',
+          { p_user_id: dep.user_id, p_amount_cents: dep.amount_cents });
+
+        // mark complete
+        await sb.from('deposits')
+          .update({ status: 'completed' })
+          .eq('id', dep.id);
+      }
     }
   }
 

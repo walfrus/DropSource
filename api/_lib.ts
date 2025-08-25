@@ -1,88 +1,88 @@
 // api/_lib.ts
+import type { NextApiRequest } from 'next';
 
-import { sb } from "../lib/db";
+/** --- SMM panel proxy helpers --- */
+const PANEL_URL = process.env.SMM_API_URL!;
+const PANEL_KEY = process.env.SMM_API_KEY!;
 
-/** User shape for wallet init */
-export type UserLite = { id: string; email?: string | null };
-
-/**
- * Ensure the user exists in `users` and has a wallet row.
- */
-export async function ensureUserAndWallet(user: UserLite) {
-  try {
-    await sb.from("users")
-      .upsert({ id: user.id, email: user.email ?? null })
-      .select()
-      .single();
-  } catch {
-    // already exists
-  }
-
-  const { data: rows } = await sb
-    .from("wallets")
-    .select("id")
-    .eq("user_id", user.id)
-    .limit(1);
-
-  if (!rows || rows.length === 0) {
-    await sb.from("wallets").insert({
-      user_id: user.id,
-      balance_cents: 0,
-      currency: "usd",
-    });
-  }
-}
-
-/**
- * Generic helper to call your SMM panel API.
- * Defaults to POST + urlencoded (most panels).
- */
 export async function callPanel(
-  action: string,
-  extra: Record<string, string | number | boolean> = {}
+  action: 'services'|'add'|'status'|'balance'|'refill'|'cancel'|'ping',
+  payload: Record<string, any> = {}
 ) {
-  const url = process.env.SMM_API_URL;
-  const key = process.env.SMM_API_KEY;
-
-  if (!url || !key) {
-    throw new Error("SMM_API_URL or SMM_API_KEY missing");
-  }
+  if (!PANEL_URL || !PANEL_KEY) throw new Error('panel env not set');
 
   const body = new URLSearchParams({
-    key,
+    key: PANEL_KEY,
     action,
-    ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, String(v)])),
+    ...Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
   });
 
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  const r = await fetch(PANEL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
 
+  // Many panels return text/HTML on error; try JSON first then fall back
   const text = await r.text();
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Panel returned non-JSON: ${text.slice(0, 200)}`);
+    if (!r.ok) throw new Error(`panel ${action} failed: ${text.slice(0, 200)}`);
+    return text;
   }
 }
 
-/**
- * Normalize a raw service row into consistent shape.
- */
 export function mapService(s: any) {
-  const price = Number(s.rate ?? s.price ?? 0);
-
+  // Normalize a panel service into what your UI expects
   return {
-    id: s.service ?? s.id,
-    name: String(s.name ?? s.service ?? "Unnamed"),
-    category: String(s.category ?? "Other"),
-    price_per_1k: isNaN(price) ? 0 : price,
-    min: Number(s.min ?? s.min_order ?? 0),
-    max: Number(s.max ?? s.max_order ?? 0),
-    dripfeed: Boolean(s.dripfeed ?? s.drip ?? false),
-    refill: Boolean(s.refill ?? false),
-    _raw: s,
+    id: s.service ?? s.id ?? s.ID,
+    name: s.name ?? s.title,
+    price_per_1k: Number(s.rate ?? s.price ?? s.price_per_k ?? 0),
+    min: Number(s.min ?? s.min_quantity ?? 0),
+    max: Number(s.max ?? s.max_quantity ?? 0),
+    category: s.category ?? s.cat,
+    type: s.type ?? s.mode ?? 'Default',
+    flags: {
+      refill: !!(s.refill || s.refill_available),
+      fast: /fast/i.test(`${s.name} ${s.description || ''}`),
+      real: /real/i.test(`${s.name} ${s.description || ''}`),
+      dripfed: /drip/i.test(`${s.name} ${s.description || ''}`),
+    },
+    raw: s, // keep for variants
   };
+}
+
+/** --- Wallet helpers (Supabase) --- */
+import { sb } from '../lib/db';
+
+export type UserLite = { id: string; email: string | null };
+
+export async function ensureUserAndWallet(user: UserLite) {
+  // upsert user
+  await sb.from('users')
+    .upsert({ id: user.id, email: user.email ?? null })
+    .select('id')
+    .single()
+    .catch(() => null);
+
+  // ensure wallet
+  const { data: rows } = await sb.from('wallets')
+    .select('id')
+    .eq('user_id', user.id)
+    .limit(1);
+  if (!rows || rows.length === 0) {
+    await sb.from('wallets').insert({
+      user_id: user.id,
+      balance_cents: 0,
+      currency: 'usd',
+    });
+  }
+}
+
+/** --- Auth helper (header-based for now) --- */
+export function getUser(req: NextApiRequest): UserLite | null {
+  const id = (req.headers['x-user-id'] as string) || '';
+  const email = (req.headers['x-user-email'] as string) || '';
+  return id ? { id, email: email || null } : null;
 }
