@@ -1,210 +1,339 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DropSource — SMM</title>
-  <style>
-    :root { --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3; --brand:#59a0ff; --price:#b085f5; }
-    *{box-sizing:border-box} 
-    body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
-    header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #26282d}
-    .container{max-width:1100px;margin:0 auto;padding:16px}
-    input,select,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
-    button{cursor:pointer}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
-    .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
-    .card h3{margin:0 0 6px 0;font-size:16px}
-    .muted{color:var(--muted)}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
-    .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
-    .brand{color:var(--brand)}
-    .price{color:var(--price);font-weight:bold}
-    .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#15161a;border-radius:999px;border:1px solid #2a2d34;font-size:13px;cursor:pointer}
-    .chip img.ico{width:16px;height:16px;display:block}
-    .chipbar{display:flex;flex-wrap:wrap;gap:6px;padding:12px 0}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>DropSource — SMM</title>
+<style>
+  :root{
+    --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3;
+    --brand:#59a0ff; --accent:#8b5cf6; --rule:#26282d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
+  header{padding:24px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule)}
+  .container{max-width:1100px;margin:0 auto;padding:16px}
+
+  input,button{background:#11131a;border:1px solid #2a2d34;color:var(--txt);padding:10px 12px;border-radius:10px}
+  button{cursor:pointer}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+  .ghost{background:#0f1117;border:1px solid #2a2d34}
+  .toolbar .count{color:var(--muted);font-size:12px}
+
+  /* sections */
+  .section{border:1px solid #24262c;border-radius:14px;overflow:hidden;margin-bottom:14px;background:#121319}
+  .section-header{
+    display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;
+    background:linear-gradient(180deg,#161821,#121319); border-bottom:1px solid #1f2128;
+  }
+  .section-header img{width:18px;height:18px}
+  .section-title{font-weight:600}
+  .section-meta{margin-left:auto;color:var(--muted);font-size:12px}
+  .chev{transition:.15s transform}
+  .collapsed .chev{transform:rotate(-90deg)}
+  .section-body{padding:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+
+  /* cards */
+  .card{background:var(--card);border:1px solid #24262c;border-radius:14px;padding:14px}
+  .card h3{margin:0 0 6px 0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pill{padding:3px 8px;border-radius:999px;background:#1c2028;color:#b9c2cc;font-size:12px}
+  .brand{color:var(--brand)}
+  .price strong{font-weight:700;color:var(--accent);text-shadow:0 0 10px rgba(139,92,246,.15)}
+  .price .per{color:var(--muted)}
+
+  .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
+  #err{margin-top:12px;color:#ff6b6b;font-size:12px}
+</style>
 </head>
 <body>
-  <header>
-    <div><strong class="brand">DropSource</strong> · Boosts</div>
-    <div class="row">
-      <input id="q" placeholder="Search services…" />
-      <button id="reload">Reload</button>
-    </div>
-  </header>
-
-  <div class="container">
-    <div id="chips" class="chipbar"></div>
-    <div id="services" class="grid"></div>
+<header>
+  <div><strong class="brand">DropSource</strong> · Boosts</div>
+  <div class="row">
+    <input id="q" placeholder="Search services…"/>
+    <button id="reload">Reload</button>
   </div>
+</header>
 
-  <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
+<div class="container">
+  <div class="toolbar">
+    <button id="expandAll" class="ghost">Expand all</button>
+    <button id="collapseAll" class="ghost">Collapse all</button>
+    <span class="count" id="totalCount"></span>
+  </div>
+  <div id="sections"></div>
+  <div id="err"></div>
+</div>
+
+<div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
 
 <script>
-let ALL_SERVICES = [];
+const elQ = document.getElementById('q');
+const elSections = document.getElementById('sections');
+const elReload = document.getElementById('reload');
+const elErr = document.getElementById('err');
+const elTotal = document.getElementById('totalCount');
+const elExpandAll = document.getElementById('expandAll');
+const elCollapseAll = document.getElementById('collapseAll');
 
+let ALL_SERVICES = [];
+let COLLAPSED = new Set(); // section slugs that are collapsed
+
+/* ===== ICONS (match your actual filenames) ===== */
 const ICON_PATHS = {
   instagram:'instagram.svg',
   tiktok:'tiktok.svg',
   youtube:'youtube.svg',
   facebook:'facebook.svg',
-  twitter:'twitter.svg',
+  twitter:'specialtwitter.svg',
   telegram:'telegram.svg',
   spotify:'spotify.svg',
   threads:'threads.svg',
-  soundcloud:'soundcloud.svg',
-  pinterest:'pinterest.svg',
+  soundcloud:'soundcloud.svg',  
+  pinterest:'pinterest.svg',                
+  reddit:'reddit.svg',
+  linkedin:'linkedin.svg',
+  twitch:'twitch.svg',
   vk:'vkontakte.svg',
   okru:'okru.svg',
   audiomack:'audiomack.svg',
   reverbnation:'reverbnation.svg',
   tidal:'tidal.svg',
   shazam:'shazam.svg',
+  dailymotion:'dailymotion.svg',
   datpiff:'datpiff.svg',
+  mixcloud:'mixcloud.svg',
+  rumble:'rumble.svg',
+  imdb:'imdb.svg',
+
+  /* specials */
   maskedtraffic:'maskedtraffic.svg',
   websitepremium:'websitepremium.svg',
   webtraffic:'webtraffic.svg',
   webtrafficgeo:'webtraffic.svg',
   ownwebsite:'onwebsite.svg',
-  other:'specialservices.svg'
+
+  other:'other.svg'
 };
 
+/* ===== PLATFORM RULES ===== */
 const PLATFORM_RULES = [
-  {slug:'instagram',re:/\binsta/i},
-  {slug:'tiktok',re:/\btik/i},
-  {slug:'youtube',re:/\byou ?tube/i},
-  {slug:'facebook',re:/\bfb\b|\bface/i},
-  {slug:'twitter',re:/\btwitter|\btwt/i},
-  {slug:'telegram',re:/\btg\b|\btelegram/i},
-  {slug:'spotify',re:/\bspotify/i},
-  {slug:'threads',re:/\bthreads/i},
-  {slug:'soundcloud',re:/\bsoundcloud/i},
-  {slug:'pinterest',re:/\bpinterest/i},
-  {slug:'vk',re:/\bvk\b/i},
-  {slug:'okru',re:/\bok(\.|ru)/i},
-  {slug:'audiomack',re:/audiomack/i},
-  {slug:'reverbnation',re:/reverb/i},
-  {slug:'tidal',re:/tidal/i},
-  {slug:'shazam',re:/shazam/i},
-  {slug:'datpiff',re:/datpiff/i},
-  {slug:'maskedtraffic',re:/masked.*traffic/i},
-  {slug:'websitepremium',re:/website.*premium/i},
-  {slug:'webtrafficgeo',re:/web.*geo.*traffic/i},
-  {slug:'webtraffic',re:/web.*traffic/i},
-  {slug:'ownwebsite',re:/own\s*website/i},
+  {slug:'instagram',re:/\binstagram\b/i},
+  {slug:'tiktok',re:/\btik\s*tok\b|\btiktok\b/i},
+  {slug:'youtube',re:/\byou\s*tube\b|\byoutube\b/i},
+  {slug:'facebook',re:/\bfacebook\b|\bfb\b/i},
+  {slug:'telegram',re:/\btelegram\b/i},
+  {slug:'twitter',re:/\btwitter\b/i},
+  {slug:'spotify',re:/\bspotify\b/i},
+  {slug:'threads',re:/\bthreads\b/i},
+  {slug:'soundcloud',re:/\bsound\s*cloud\b|\bsoundcloud\b/i},
+  {slug:'pinterest',re:/\bpint?erest\b/i},
+  {slug:'reddit',re:/\breddit\b/i},
+  {slug:'linkedin',re:/\blinked?in\b/i},
+  {slug:'twitch',re:/\btwitch\b/i},
+  {slug:'vk',re:/\bvk(?:ontakte)?\b/i},
+  {slug:'okru',re:/\bok\.?ru\b|\bokru\b/i},
+  {slug:'audiomack',re:/\baudio\s*mack\b/i},
+  {slug:'reverbnation',re:/\breverb\s*nation\b/i},
+  {slug:'tidal',re:/\btidal\b/i},
+  {slug:'shazam',re:/\bshazam\b/i},
+  {slug:'dailymotion',re:/\bdaily\s*motion\b/i},
+  {slug:'datpiff',re:/\bdatpiff\b/i},
+  {slug:'mixcloud',re:/\bmixcloud\b/i},
+  {slug:'rumble',re:/\brumble\b/i},
+  {slug:'imdb',re:/\bimdb\b/i},
+
+  /* specials / traffic */
+  {slug:'maskedtraffic',re:/\bmasked\b.*\btraffic\b/i},
+  {slug:'websitepremium',re:/\bwebsite\b.*\bpremium\b/i},
+  {slug:'webtrafficgeo',re:/\bweb\b.*\bgeo\b.*\btraffic\b/i},
+  {slug:'webtraffic',re:/\bweb\b.*\btraffic\b/i},
+  {slug:'ownwebsite',re:/\bown\b.*\bwebsite\b/i},
 ];
 
-function guessPlatformFromName(name=''){
-  for(const rule of PLATFORM_RULES){
-    if(rule.re.test(name)) return rule.slug;
-  }
+function getPlatformSlug(text=''){
+  const t = String(text||'').toLowerCase();
+  for(const rule of PLATFORM_RULES){ if(rule.re.test(t)) return rule.slug; }
   return 'other';
 }
-
 function slugLabel(slug){
-  const map = {
-    instagram:'Instagram',tiktok:'TikTok',youtube:'YouTube',facebook:'Facebook',
-    twitter:'Twitter',telegram:'Telegram',spotify:'Spotify',threads:'Threads',
-    soundcloud:'SoundCloud',pinterest:'Pinterest',vk:'VK',okru:'OK.ru',
-    audiomack:'Audiomack',reverbnation:'ReverbNation',tidal:'Tidal',shazam:'Shazam',
-    datpiff:'DatPiff',maskedtraffic:'Masked Traffic',websitepremium:'Website Premium',
-    webtraffic:'Web Traffic',webtrafficgeo:'Web Traffic (Geo)',ownwebsite:'Own Website',
-    other:'Other'
-  };
-  return map[slug] || slug;
+  const map={okru:'OK.ru',vk:'VK',soundcloud:'SoundCloud',reverbnation:'ReverbNation',
+             datpiff:'DatPiff',webtraffic:'Web Traffic',webtrafficgeo:'Web Traffic (Geo)',
+             websitepremium:'Website Premium',maskedtraffic:'Masked Traffic',ownwebsite:'Own Website'};
+  return map[slug] || slug.charAt(0).toUpperCase()+slug.slice(1);
 }
 
-function cleanTitle(name){
-  return name.replace(/\[.*?\]/g,'').replace(/\s+/g,' ').trim();
+/* ===== TITLE CLEANUP ===== */
+const PRODUCT_WORDS=['Followers','Likes','Views','Comments','Subscribers','Saves','Story Views','Impressions','Shares','Plays','Streams','Downloads','Members','Votes','Service'];
+
+function cleanNoise(str=''){
+  return String(str)
+    .replace(/\[.*?\]/g,' ')                  // remove bracket noise
+    .replace(/% ?\d{2,3}|%100/gi,' ')         // %100 etc
+    .replace(/\bWORKING AFTER UPDATE\b/gi,' ')
+    .replace(/\bProvider Service\b/gi,' ')
+    .replace(/\bR\d+\b/g,' ')
+    .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')      // dates
+    .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ') // emojis/symbols
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function extractProduct(name='',cat=''){
+  const hay=`${name} ${cat}`.toLowerCase();
+  for(const w of PRODUCT_WORDS){
+    const re=new RegExp(`\\b${w.toLowerCase().replace(/\s+/g,'\\s*')}\\b`,'i');
+    if(re.test(hay)) return w;
+  }
+  if(/follow/i.test(hay)) return 'Followers';
+  if(/like/i.test(hay)) return 'Likes';
+  if(/view/i.test(hay)) return 'Views';
+  if(/comment/i.test(hay)) return 'Comments';
+  if(/sub/i.test(hay)) return 'Subscribers';
+  if(/save/i.test(hay)) return 'Saves';
+  if(/impression/i.test(hay)) return 'Impressions';
+  if(/share/i.test(hay)) return 'Shares';
+  if(/play|stream/i.test(hay)) return 'Plays';
+  if(/download/i.test(hay)) return 'Downloads';
+  return 'Service';
+}
+function prettyTitle(svc){
+  const slug=getPlatformSlug(svc.category||svc.name||'other');
+  const platform=slugLabel(slug);
+  const product=extractProduct(cleanNoise(svc.name||''), svc.category||'');
+  return `${platform} ${product}`;
 }
 
-function uniqueServices(services){
+/* ===== CONSERVATIVE DEDUPE (keeps variants) ===== */
+function mildClean(str=''){
+  return String(str)
+    .replace(/\d{2}\.\d{2}\.\d{4}/g,' ')
+    .replace(/[\u2190-\u21FF\u2300-\u27BF\u2600-\u27EF]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .toLowerCase();
+}
+function dedupeKey(s){
+  const plat=getPlatformSlug(s.category||s.name||'');
+  const prod=extractProduct(s.name||'', s.category||'');
+  const title=mildClean(cleanNoise(s.name||s.title||''));
+  const mmpp=`${s.min}|${s.max}|${s.price_per_1k}`; // identical stock/price = true dupes
+  return `${plat}|${prod}|${title}|${mmpp}`;
+}
+function uniqueServices(list){
   const seen=new Set();
-  return services.filter(s=>{
-    const key=cleanTitle(s.name).toLowerCase();
-    if(seen.has(key)) return false;
-    seen.add(key);return true;
+  return list.filter(s=>{const k=dedupeKey(s);if(seen.has(k))return false;seen.add(k);return true;});
+}
+
+/* ===== FETCH + GROUP + RENDER ===== */
+async function fetchServices(){
+  try{
+    const res=await fetch('/api/services');
+    if(!res.ok) throw new Error(`API ${res.status}`);
+    const data=await res.json();
+    ALL_SERVICES=uniqueServices(Array.isArray(data)?data:[]);
+    render();
+  }catch(err){elErr.textContent='Load error: '+(err?.message||err);}
+}
+
+function groupByPlatform(services, query=''){
+  const out=new Map();
+  services.forEach(s=>{
+    const hay=`${s.name||''} ${s.title||''} ${s.category||''}`.toLowerCase();
+    if(query && !hay.includes(query)) return;
+    const slug=getPlatformSlug(s.category||s.name||'');
+    if(!out.has(slug)) out.set(slug, []);
+    out.get(slug).push(s);
   });
+  return out;
 }
 
-function buildCategories(services){
-  const chips=document.getElementById('chips');
-  chips.innerHTML='';
-  const groups={};
-  for(const s of services){
-    const slug=guessPlatformFromName(s.name);
-    groups[slug]=groups[slug]||0;
-    groups[slug]++;
-  }
-  const entries=Object.entries(groups).sort((a,b)=>b[1]-a[1]);
-  const allChip=document.createElement('div');
-  allChip.className='chip';allChip.innerHTML='<img class="ico" src="/icons/specialservices.svg"> All products';
-  allChip.onclick=()=>renderServices(services);
-  chips.appendChild(allChip);
-  for(const [slug,count] of entries){
-    const chip=document.createElement('div');
-    chip.className='chip';
-    const icon=ICON_PATHS[slug]||ICON_PATHS.other;
-    chip.innerHTML=`<img class="ico" src="/icons/${icon}"> ${slugLabel(slug)}`;
-    chip.onclick=()=>renderServices(services.filter(s=>guessPlatformFromName(s.name)===slug));
-    chips.appendChild(chip);
+function render(){
+  const q=(elQ.value||'').toLowerCase();
+  const groups=groupByPlatform(ALL_SERVICES,q);
+
+  // order: priority first, then by group size
+  const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','snapchat','reddit','linkedin','twitch','pinterest','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
+  const ordered=[...groups.keys()].sort((a,b)=>{
+    const ai=priority.indexOf(a), bi=priority.indexOf(b);
+    if(ai!==-1 || bi!==-1) return (ai===-1?999:ai) - (bi===-1?999:bi);
+    return groups.get(b).length - groups.get(a).length;
+  });
+
+  const total=[...groups.values()].reduce((n,arr)=>n+arr.length,0);
+  elTotal.textContent = `${total.toLocaleString()} services`;
+
+  elSections.innerHTML='';
+  for(const slug of ordered){
+    const items=groups.get(slug);
+    if(!items || !items.length) continue;
+
+    const section=document.createElement('section');
+    section.className='section'+(COLLAPSED.has(slug)?' collapsed':'');
+    section.dataset.slug=slug;
+
+    section.innerHTML=`
+      <div class="section-header">
+        <img src="/icons/${ICON_PATHS[slug]||ICON_PATHS.other}" alt="">
+        <div class="section-title">${slugLabel(slug)}</div>
+        <div class="section-meta">${items.length.toLocaleString()} services</div>
+        <div class="chev">▾</div>
+      </div>
+      <div class="section-body" style="${COLLAPSED.has(slug)?'display:none':''}">
+        <div class="grid">
+          ${items.map(cardHtml).join('')}
+        </div>
+      </div>
+    `;
+
+    section.querySelector('.section-header').addEventListener('click',()=>{
+      if(COLLAPSED.has(slug)){ COLLAPSED.delete(slug); } else { COLLAPSED.add(slug); }
+      render();
+      section.scrollIntoView({block:'start',behavior:'instant'});
+    });
+
+    elSections.appendChild(section);
   }
 }
 
-function renderServices(services){
-  const elGrid=document.getElementById('services');
-  elGrid.innerHTML=services.map(s=>`
+function cardHtml(s){
+  const titleText=prettyTitle(s);
+  const price=(typeof s.price_per_1k==='number'&&isFinite(s.price_per_1k))?`$${s.price_per_1k.toFixed(2)}`:'-';
+  const maxLine=s.max?`Max ${Number(s.max).toLocaleString()}`:'';
+  return `
     <div class="card">
-      <h3><span class="brand">[DropSource]</span> — ${cleanTitle(s.name)}</h3>
-      <div class="muted">Max ${s.max.toLocaleString()}</div>
+      <h3><span class="brand">[DropSource]</span> — ${escapeHtml(titleText)}</h3>
+      <div class="muted">${escapeHtml(maxLine)}</div>
       <div class="row" style="margin:8px 0 10px">
-        <span class="pill">Min ${s.min}</span>
+        ${s.min?`<span class="pill">Min ${s.min}</span>`:''}
+        ${s.max?`<span class="pill">Max ${s.max}</span>`:''}
         ${s.dripfeed?'<span class="pill">Dripfeed</span>':''}
         ${s.refill?'<span class="pill">Refill</span>':''}
       </div>
       <div class="row" style="justify-content:space-between">
-        <div><span class="price">$${s.price_per_1k.toFixed(2)}</span><span class="muted"> / 1k</span></div>
+        <div class="price"><strong>${price}</strong> <span class="per">/ 1k</span></div>
         <button onclick='openOrder(${JSON.stringify(s)})'>Order</button>
       </div>
     </div>
-  `).join('');
+  `;
 }
 
-async function fetchServices(){
-  const res=await fetch('/api/services');
-  const data=await res.json();
-  ALL_SERVICES=uniqueServices(data);
-  buildCategories(ALL_SERVICES);
-  renderServices(ALL_SERVICES);
-}
+/* utils */
+function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
+async function placeOrder(id,link,qty,runs,interval){const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:id,link,quantity:qty,runs,interval})});return res.json();}
+function openOrder(svc){const link=prompt('Paste the target link (post/profile URL):');if(!link)return;const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));if(!qty||qty<svc.min||qty>svc.max){alert('Quantity out of range');return;}placeOrder(svc.id,link,qty).then(r=>{if(r.error)alert('Error: '+r.error);else alert('Order placed! ID: '+r.order);}).catch(e=>alert('Network issue: '+e.message));}
 
-async function placeOrder(serviceId,link,quantity,runs,interval){
-  const res=await fetch('/api/order',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({service:serviceId,link,quantity,runs,interval})
-  });
-  return res.json();
-}
-
-function openOrder(svc){
-  const link=prompt('Paste the target link (post/profile URL):');
-  if(!link) return;
-  const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
-  if(!qty||qty<svc.min||qty>svc.max){alert('Quantity out of range');return;}
-  placeOrder(svc.id,link,qty).then(r=>{
-    if(r.error) alert('Error: '+r.error);
-    else alert('Order placed! ID: '+r.order);
-  }).catch(e=>alert('Network issue: '+e.message));
-}
-
-document.getElementById('q').addEventListener('input',()=>{
-  const q=document.getElementById('q').value.toLowerCase();
-  const filtered=ALL_SERVICES.filter(s=>s.name.toLowerCase().includes(q));
-  renderServices(filtered);
+/* events */
+elQ.addEventListener('input', render);
+elReload.addEventListener('click', fetchServices);
+elExpandAll.addEventListener('click', ()=>{ COLLAPSED.clear(); render(); });
+elCollapseAll.addEventListener('click', ()=>{
+  const slugs=[...document.querySelectorAll('.section')].map(s=>s.dataset.slug);
+  COLLAPSED=new Set(slugs); render();
 });
-document.getElementById('reload').addEventListener('click',()=>fetchServices());
+
+/* boot */
 fetchServices();
 </script>
 </body>
