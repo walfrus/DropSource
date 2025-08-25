@@ -76,29 +76,42 @@ export default async function handler(req: any, res: any) {
     if (!orderId) throw new Error('Square order create failed (no id)');
 
     // 2) Create a Payment Link from that order
-    const redirect = `${publicUrl}/balance.html?ok=1&uid=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email || '')}`;
-    const plPayload = {
-      idempotency_key: `plink_${dep.id}_${Date.now()}`,
-      order_id: orderId,
-      checkout_options: { ask_for_shipping_address: false, redirect_url: redirect }
-    };
-    const linkResp = await sqFetch('/v2/online-checkout/payment-links', { method: 'POST', body: JSON.stringify(plPayload) });
-    const linkId = linkResp?.payment_link?.id as string | undefined;
-    const linkUrl = linkResp?.payment_link?.url as string | undefined;
-    if (!linkId || !linkUrl) throw new Error('Square payment link create failed');
+    // build payment link directly with inline order (no separate /v2/orders call)
+const redirect = `${publicUrl}/balance.html?ok=1&uid=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email || '')}`;
 
-    // store provider_id as payment_link.id (still fine)
-    await sb.from('deposits').update({ provider_id: linkId }).eq('id', dep.id);
+const linkPayload = {
+  idempotency_key: `plink_${dep.id}_${Date.now()}`,
+  order: {
+    location_id: locationId,
+    reference_id: String(dep.id), // <-- critical for webhook mapping
+    line_items: [{
+      name: 'DropSource Credits',
+      quantity: '1',
+      base_price_money: { amount: cents, currency: 'USD' },
+    }],
+  },
+  checkout_options: { ask_for_shipping_address: false, redirect_url: redirect }
+};
 
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      url: linkUrl,
-      deposit_id: dep.id,
-      amount_cents: cents,
-      method: 'square',
-      order_id: orderId,         // helpful for debugging
-      payment_link_id: linkId    // also helpful
-    }));
+const linkResp = await sqFetch('/v2/online-checkout/payment-links', {
+  method: 'POST',
+  body: JSON.stringify(linkPayload),
+});
+
+const linkId = linkResp?.payment_link?.id as string | undefined;
+const linkUrl = linkResp?.payment_link?.url as string | undefined;
+if (!linkId || !linkUrl) throw new Error('Square payment link create failed');
+
+await sb.from('deposits').update({ provider_id: linkId }).eq('id', dep.id);
+
+res.setHeader('Content-Type', 'application/json');
+res.end(JSON.stringify({
+  url: linkUrl,
+  deposit_id: dep.id,
+  amount_cents: cents,
+  method: 'square',
+  payment_link_id: linkId
+}));
   } catch (e: any) {
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
