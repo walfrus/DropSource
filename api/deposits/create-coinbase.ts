@@ -1,55 +1,63 @@
-// api/deposits/create-coinbase.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { sb } from '../../lib/db';
-import { getUser } from '../../lib/auth';
-import { ensureUserAndWallet } from '../_lib';
+import { readJsonBody, ensureUserAndWallet } from '../../lib/smm.js';
+import { getUser } from '../../lib/auth.js';
+import { sb } from '../../lib/db.js';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).end();
+// ...rest of file unchanged from my previous message...
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+
   const user = getUser(req);
-  if (!user) return res.status(401).json({ error: 'no user' });
+  if (!user) { res.statusCode = 401; res.end(JSON.stringify({ error: 'no user' })); return; }
 
-  const cents = Number(req.body?.amount_cents);
-  if (!Number.isFinite(cents) || cents < 100) {
-    return res.status(400).json({ error: 'min $1.00' });
+  try {
+    const body = await readJsonBody(req);
+    const cents = Number(body?.amount_cents || 0);
+    if (!Number.isFinite(cents) || cents < 100) {
+      res.statusCode = 400; res.end(JSON.stringify({ error: 'min $1.00' })); return;
+    }
+
+    await ensureUserAndWallet(sb, user);
+
+    const { data: dep, error } = await sb.from('deposits').insert({
+      user_id: user.id, method: 'coinbase', amount_cents: cents, status: 'pending'
+    }).select('*').single();
+    if (error) throw error;
+
+    const apiKey = process.env.COINBASE_COMMERCE_API_KEY || '';
+    const redirect = `${process.env.PUBLIC_URL}/balance?ok=1`;
+    const cancel = `${process.env.PUBLIC_URL}/balance?canceled=1`;
+
+    const r = await fetch('https://api.commerce.coinbase.com/charges', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CC-Api-Key': apiKey,
+        'X-CC-Version': '2018-03-22'
+      },
+      body: JSON.stringify({
+        name: 'DropSource Credits',
+        pricing_type: 'fixed_price',
+        local_price: { amount: (cents / 100).toFixed(2), currency: 'USD' },
+        metadata: { userId: user.id, depositId: dep.id },
+        redirect_url: redirect,
+        cancel_url: cancel
+      })
+    });
+
+    const json = await r.json();
+    if (!r.ok) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: json?.error?.message || 'coinbase failed' }));
+      return;
+    }
+
+    await sb.from('deposits').update({ provider_id: json?.data?.id || null }).eq('id', dep.id);
+
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ url: json?.data?.hosted_url }));
+  } catch (e: any) {
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: String(e?.message || e) }));
   }
-  const amount = (cents / 100).toFixed(2);
-
-  await ensureUserAndWallet(user);
-
-  // create pending deposit
-  const { data: dep, error } = await sb.from('deposits').insert({
-    user_id: user.id,
-    method: 'coinbase',
-    amount_cents: cents,
-    status: 'pending',
-  }).select('*').single();
-  if (error) return res.status(400).json({ error: error.message });
-
-  // Coinbase Commerce
-  const r = await fetch('https://api.commerce.coinbase.com/charges', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CC-Api-Key': process.env.COINBASE_COMMERCE_API_KEY as string,
-      'X-CC-Version': '2018-03-22',
-    },
-    body: JSON.stringify({
-      name: 'DropSource Credits',
-      pricing_type: 'fixed_price',
-      local_price: { amount, currency: 'USD' },
-      metadata: { userId: user.id, depositId: dep.id },
-      redirect_url: `${process.env.PUBLIC_URL}/balance?ok=1`,
-      cancel_url: `${process.env.PUBLIC_URL}/balance?canceled=1`,
-    }),
-  });
-
-  const json = await r.json();
-  if (!r.ok) return res.status(400).json({ error: json?.error?.message || 'coinbase failed' });
-
-  await sb.from('deposits')
-    .update({ provider_id: json.data?.id ?? null })
-    .eq('id', dep.id);
-
-  return res.json({ url: json.data?.hosted_url });
 }

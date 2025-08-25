@@ -1,6 +1,9 @@
 {
   "version": 2,
-  "routes": [
-    { "src": "^/$", "dest": "/public/index.html" }
+  "functions": {
+    "api/**/*.[jt]s": { "runtime": "nodejs20.x" }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
   ]
 }

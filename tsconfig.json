@@ -1,16 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
+    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
+    "esModuleInterop": false,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "allowJs": false,
-    "noEmit": true,
-    "types": ["node"],
-    "lib": ["ES2021", "DOM"]
+    "types": ["node"]
   },
-  "include": ["api/**/*", "lib/**/*", "next-env.d.ts"]
+  "include": ["api/**/*", "lib/**/*"]
 }

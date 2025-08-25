@@ -1,80 +1,64 @@
-// api/deposits/create-square.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { sb } from '../../lib/db';
-import { getUser } from '../../lib/auth';
-import { ensureUserAndWallet } from '../_lib';
+import { readJsonBody, ensureUserAndWallet } from '../../lib/smm.js';
+import { getUser } from '../../lib/auth.js';
+import { sb } from '../../lib/db.js';
 
-const SQ_BASE = 'https://connect.squareup.com/v2';
+// ...rest unchanged...
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).end();
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
 
   const user = getUser(req);
-  if (!user) return res.status(401).json({ error: 'no user' });
+  if (!user) { res.statusCode = 401; res.end(JSON.stringify({ error: 'no user' })); return; }
 
-  const cents = Number(req.body?.amount_cents);
-  if (!Number.isFinite(cents) || cents < 100) {
-    return res.status(400).json({ error: 'min $1.00' });
-  }
+  try {
+    const body = await readJsonBody(req);
+    const cents = Number(body?.amount_cents || 0);
+    if (!Number.isFinite(cents) || cents < 100) {
+      res.statusCode = 400; res.end(JSON.stringify({ error: 'min $1.00' })); return;
+    }
 
-  await ensureUserAndWallet(user);
+    await ensureUserAndWallet(sb, user);
 
-  const { data: dep, error } = await sb.from('deposits').insert({
-    user_id: user.id,
-    method: 'square',
-    amount_cents: cents,
-    status: 'pending',
-  }).select('*').single();
-  if (error) return res.status(400).json({ error: error.message });
+    const { data: dep, error } = await sb.from('deposits').insert({
+      user_id: user.id, method: 'square', amount_cents: cents, status: 'pending'
+    }).select('*').single();
+    if (error) throw error;
 
-  // Build an order with a reference_id so webhook can look it up
-  const access = process.env.SQUARE_ACCESS_TOKEN!;
-  const locationId = process.env.SQUARE_LOCATION_ID!;
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${access}`,
-    'Square-Version': '2024-07-17',
-  };
+    const token = process.env.SQUARE_ACCESS_TOKEN || '';
+    const locationId = process.env.SQUARE_LOCATION_ID || '';
+    const redirect = `${process.env.PUBLIC_URL}/balance?ok=1`;
 
-  // Create an order with reference_id = deposit id
-  const orderResp = await fetch(`${SQ_BASE}/orders`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      order: {
-        location_id: locationId,
-        reference_id: String(dep.id),
-        line_items: [{
+    const r = await fetch('https://connect.squareup.com/v2/online-checkout/payment-links', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Square-Version': '2024-06-20',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        idempotency_key: `dep_${dep.id}_${Date.now()}`,
+        quick_pay: {
           name: 'DropSource Credits',
-          quantity: '1',
-          base_price_money: { amount: cents, currency: 'USD' },
-        }],
-      },
-      idempotency_key: `${dep.id}-order`,
-    }),
-  });
-  const order = await orderResp.json();
-  if (!orderResp.ok) return res.status(400).json({ error: order?.errors?.[0]?.detail || 'square order failed' });
+          price_money: { amount: cents, currency: 'USD' },
+          location_id: locationId
+        },
+        checkout_options: { ask_for_shipping_address: false, redirect_url: redirect }
+      })
+    });
 
-  // Create a payment link for the order (enables Cash App Pay on buyer side)
-  const linkResp = await fetch(`${SQ_BASE}/online-checkout/payment-links`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      idempotency_key: `${dep.id}-plink`,
-      order_id: order.order.id,
-      checkout_options: {
-        redirect_url: `${process.env.PUBLIC_URL}/balance?ok=1`,
-        ask_for_shipping_address: false,
-      },
-    }),
-  });
-  const link = await linkResp.json();
-  if (!linkResp.ok) return res.status(400).json({ error: link?.errors?.[0]?.detail || 'square link failed' });
+    const json = await r.json();
+    if (!r.ok) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: json?.errors?.[0]?.detail || 'square failed' }));
+      return;
+    }
 
-  await sb.from('deposits').update({
-    provider_id: order.order.id,
-  }).eq('id', dep.id);
+    await sb.from('deposits').update({ provider_id: json?.payment_link?.id || null }).eq('id', dep.id);
 
-  return res.json({ url: link.payment_link?.url });
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ url: json?.payment_link?.url }));
+  } catch (e: any) {
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: String(e?.message || e) }));
+  }
 }

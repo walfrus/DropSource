@@ -1,22 +1,15 @@
-// api/wallet/get.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { sb } from '../../lib/db';
-import { getUser } from '../../lib/auth';
-import { ensureUserAndWallet } from '../_lib';
+import { sb } from '../../lib/db.js';
+import { getUser } from '../../lib/auth.js';
+import { ensureUserAndWallet } from '../../lib/smm.js';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: any, res: any) {
   const user = getUser(req);
-  if (!user) return res.status(401).json({ error: 'no user' });
+  if (!user) { res.statusCode = 401; res.end(JSON.stringify({ error: 'no user' })); return; }
 
-  await ensureUserAndWallet(user);
+  await ensureUserAndWallet(sb, user);
+  const { data: w, error } = await sb.from('wallets').select('*').eq('user_id', user.id).single();
+  if (error) { res.statusCode = 400; res.end(JSON.stringify({ error: error.message })); return; }
 
-  const { data: w, error } = await sb
-    .from('wallets')
-    .select('*')
-    .eq('user_id', user.id)
-    .single();
-
-  if (error) return res.status(400).json({ error: error.message });
-
-  res.json({ balance_cents: w?.balance_cents ?? 0, currency: w?.currency ?? 'usd' });
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify({ balance_cents: w?.balance_cents ?? 0, currency: w?.currency ?? 'usd' }));
 }

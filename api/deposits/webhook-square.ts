@@ -1,52 +1,44 @@
-// api/deposits/webhook-square.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import crypto from 'crypto';
-import { buffer } from 'micro';
-import { sb } from '../../lib/db';
+// /api/deposits/webhook-square.ts
+import { readRawBody, crypto } from '../../lib/smm.js';
+import { sb } from '../../lib/db.js';
 
-export const config = { api: { bodyParser: false } };
+// ...rest unchanged...
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).end();
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
 
-  // Square sends signature in x-square-hmacsha256 (base64)
-  const sig = (req.headers['x-square-hmacsha256'] as string) || '';
-  const secret = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY as string;
-  if (!sig || !secret) return res.status(400).end();
+  try {
+    const headerSig = (req.headers['x-square-hmacsha256'] as string) || '';
+    const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
+    if (!headerSig || !key) { res.statusCode = 400; res.end('missing signature'); return; }
 
-  const raw = await buffer(req);
+    const raw = await readRawBody(req);
+    const expected = crypto.createHmac('sha256', key).update(raw).digest('base64');
+    if (headerSig !== expected) { res.statusCode = 400; res.end('bad signature'); return; }
 
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(raw)
-    .digest('base64');
+    const body = JSON.parse(raw.toString('utf8'));
+    const type = String(body?.type || body?.event_type || '').toUpperCase();
+    const obj = body?.data?.object || {};
+    const plinkId = obj?.payment_link?.id || obj?.payment_link_id || obj?.id || '';
 
-  if (sig !== expected) return res.status(401).json({ error: 'bad signature' });
+    if (!plinkId) { res.statusCode = 200; res.end('no payment link id'); return; }
 
-  const event = JSON.parse(raw.toString('utf8'));
-  const type = event?.type;
+    const { data: dep } = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
+    if (!dep) { res.statusCode = 200; res.end('no deposit'); return; }
 
-  if (type === 'payment.updated' || type === 'payment.created') {
-    const payment = event?.data?.object?.payment;
-    const status = payment?.status;
-    const orderId = payment?.order_id as string | undefined;
-
-    if (status === 'COMPLETED' && orderId) {
-      const { data: dep } = await sb.from('deposits')
-        .select('*')
-        .eq('provider_id', orderId)
-        .single();
-
-      if (dep && dep.status !== 'completed') {
-        await sb.rpc('increment_wallet',
-          { p_user_id: dep.user_id, p_amount_cents: dep.amount_cents });
-
-        await sb.from('deposits')
-          .update({ status: 'completed' })
-          .eq('id', dep.id);
-      }
+    if (type.includes('PAYMENT') && type.includes('COMPLETED')) {
+      await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
+      const { data: w } = await sb.from('wallets').select('id,balance_cents').eq('user_id', dep.user_id).single();
+      const next = (w?.balance_cents || 0) + Number(dep.amount_cents || 0);
+      await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
+    } else if (type.includes('CANCELED') || type.includes('FAILED')) {
+      await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
     }
-  }
 
-  res.json({ ok: true });
+    res.statusCode = 200;
+    res.end('ok');
+  } catch (e: any) {
+    res.statusCode = 500;
+    res.end(String(e?.message || e));
+  }
 }

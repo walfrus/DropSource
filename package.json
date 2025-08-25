@@ -1,14 +1,16 @@
 {
-  "name": "drop-source",
+  "name": "dropsource",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "vercel dev",
-    "start": "vercel dev"
-  },
-  "devDependencies": {
-    "typescript": "^5.5.4"
+    "build": "echo 'no build step'",
+    "dev": "node -e \"console.log('use vercel dev')\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.11.30"
   }
 }
