@@ -267,10 +267,47 @@ async function load(){
       }
       card.appendChild(det);
 
-      card.querySelector('[data-expand]').onclick=()=>det.open=!det.open;
-      card.querySelectorAll('[data-order]').forEach(btn=>{
-        btn.onclick=()=>openOrder(list.find(x=>x.id==btn.dataset.order));
-      });
+      card.querySelector('[data-expand]').onclick = () => det.open = !det.open;
+
+// NEW: smart-order with custom amount
+function orderWithCustomAmount(variants){
+  const link = prompt('Paste the target link (post/profile URL):');
+  if (!link) return;
+
+  const qty = Number(prompt('Quantity (any number you want):'));
+  if (!Number.isFinite(qty) || qty <= 0) { alert('Invalid quantity'); return; }
+
+  // find all variants that allow this quantity
+  const eligible = variants.filter(v => Number(v.min) <= qty && qty <= Number(v.max));
+  if (eligible.length === 0) {
+    // suggest nearest allowed amount using the cheapest variant overall
+    const cheapest = [...variants].sort((a,b)=>normalizePrice(a)-normalizePrice(b))[0];
+    const minAllowed = Number(cheapest.min);
+    if (qty < minAllowed) {
+      if (confirm(`Providers require at least ${minAllowed}. Order ${minAllowed} instead?`)) {
+        placeOrder(cheapest.id, link, minAllowed).then(handleOrderResponse).catch(handleOrderError);
+      }
+      return;
+    }
+    alert('No variant supports that amount. Try another quantity.');
+    return;
+  }
+
+  // pick the cheapest eligible variant
+  const chosen = eligible.sort((a,b)=>normalizePrice(a)-normalizePrice(b))[0];
+  placeOrder(chosen.id, link, qty).then(handleOrderResponse).catch(handleOrderError);
+}
+
+function handleOrderResponse(r){
+  if (r?.error) alert('Error: ' + r.error);
+  else alert('Order placed! ID: ' + r.order);
+}
+function handleOrderError(e){ alert('Network issue: ' + e.message); }
+
+// wire buttons
+card.querySelectorAll('[data-order]').forEach(btn=>{
+  btn.onclick = () => orderWithCustomAmount(list);
+});
 
       grid.appendChild(card);
     }
