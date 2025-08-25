@@ -240,7 +240,7 @@ async function fetchServices() {
   const res = await fetch('/api/services');
   const data = await res.json();
   ALL_SERVICES = uniqueServices(data);
-  buildCategories(data);
+  buildCategories(ALL_SERVICES);
   renderServices(filterServices());
 }
 
