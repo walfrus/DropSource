@@ -8,7 +8,6 @@
     :root{
       --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3;
       --stroke:#24262c; --chip:#1c2028; --brand:#59a0ff; --shadow:0 6px 24px rgba(0,0,0,.35);
-      /* soft chips */
       --c-blue:hsla(210,90%,60%,.16); --t-blue:#a3c5ff;
       --c-green:hsla(150,55%,55%,.16); --t-green:#b9f1d6;
       --c-amber:hsla(40,85%,60%,.16);  --t-amber:#f4d3a5;
@@ -84,7 +83,6 @@ elQ.oninput = load; elCat.onchange = load;
 
 function showErr(m){ console.error(m); alert(m); }
 
-// platform colors
 const PLATFORM_COLORS = {
   Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
   TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
@@ -98,7 +96,6 @@ const PLATFORM_COLORS = {
   Podcast:'#ffa500', MassDM:'#59a0ff', Exchange:'#59a0ff', Other:'#59a0ff'
 };
 
-// detect platform from category/name
 function detectPlatform(str=''){
   const s = String(str).toLowerCase();
   const map = [
@@ -129,7 +126,6 @@ function detectPlatform(str=''){
     ['Reverbnation',/reverbnation/],
     ['Tumblr',/tumblr/],
     ['WhatsApp',/whatsapp/],
-    // web/mobile/seo/traffic/etc
     ['Website',/website|web ?traffic|seo|premium traffic|site traffic|webtraffic/i],
     ['Mobile',/mobile|app installs?/i],
     ['Crypto',/crypto|bitcoin|btc|eth|ethereum/i],
@@ -145,7 +141,6 @@ function detectPlatform(str=''){
   return 'Other';
 }
 
-// base type detector (card headline)
 const TYPE_PATTERNS = [
   ['Followers', /follows?|followers?|subs?(cribers?)?/i],
   ['Likes', /likes?/i],
@@ -190,11 +185,9 @@ async function load(){
   try{ data = await res.json(); } catch { showErr('Failed to parse services'); return; }
   if(!Array.isArray(data)){ showErr(data?.error||'Failed to load services'); return; }
 
-  // filter crazy prices (keep believable range)
-  const MIN_PRICE = 0.10;   // $/1k
-  const MAX_PRICE = 100.00; // $/1k
+  const MIN_PRICE = 0.10;   // $/1k sanity
+  const MAX_PRICE = 100.00; // $/1k sanity
 
-  // group by platform → base type
   const byPlat = new Map();
   for(const s of data){
     if (s.price_per_1k < MIN_PRICE || s.price_per_1k > MAX_PRICE) continue;
@@ -206,14 +199,12 @@ async function load(){
     m.get(type).push(s);
   }
 
-  // fill platform dropdown once
   if(!elCat.dataset.filled){
     const plats = [...byPlat.keys()].sort();
     for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
     elCat.dataset.filled='1';
   }
 
-  // render
   elWrap.innerHTML = '';
   const want = elCat.value;
   for(const [plat, byType] of byPlat){
@@ -233,8 +224,7 @@ async function load(){
       </div>
       <div class="body"><div class="grid"></div></div>
     `;
-    const head = sec.querySelector('.head');
-    head.addEventListener('click', ()=>sec.classList.toggle('open'));
+    sec.querySelector('.head').addEventListener('click', ()=>sec.classList.toggle('open'));
 
     const grid = sec.querySelector('.grid');
     for(const [type, list0] of byType){
@@ -259,17 +249,24 @@ async function load(){
         <div class="row" style="justify-content:space-between;align-items:center">
           <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
           <div class="row">
-            <button class="btn" data-order="${cheapest.id}">Order cheapest</button>
+            <button class="btn"
+              data-order
+              data-id="${cheapest.id}"
+              data-min="${cheapest.min}"
+              data-max="${cheapest.max}"
+              data-price="${cheapest.price_per_1k}"
+              data-name="${escapeHtml(type)}"
+            >Order cheapest</button>
             <button class="btn" data-expand>View variants</button>
           </div>
         </div>
       `;
 
-      // variants
       const det = document.createElement('details');
       det.style.marginTop='6px';
       det.innerHTML = `<summary>Variants (${list.length})</summary><div></div>`;
       const vWrap = det.querySelector('div');
+
       for(const svc of list){
         const tags = makeTags(svc.name);
         const row = document.createElement('div');
@@ -280,16 +277,19 @@ async function load(){
           </div>
           <div class="row">
             <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
-            <button class="btn" data-order="${svc.id}">Order</button>
+            <button class="btn"
+              data-order
+              data-id="${svc.id}"
+              data-min="${svc.min}"
+              data-max="${svc.max}"
+              data-price="${svc.price_per_1k}"
+              data-name="${escapeHtml(type)}"
+            >Order</button>
           </div>`;
         vWrap.appendChild(row);
       }
       card.appendChild(det);
-
       card.querySelector('[data-expand]').onclick=()=>det.open=!det.open;
-      card.querySelectorAll('[data-order]').forEach(btn=>{
-        btn.onclick=()=>openOrder(list.find(x=>x.id==btn.dataset.order));
-      });
 
       grid.appendChild(card);
     }
@@ -309,24 +309,51 @@ async function placeOrder(serviceId, link, quantity, runs, interval){
   return res.json();
 }
 
-// allow ANY quantity, show estimated cost; do not hard-block below min
-function openOrder(svc){
-  const link = prompt('Paste the target link (post/profile URL):');
-  if(!link) return;
+/* Global event delegation for all order buttons. Allows any positive qty,
+   but warns if outside provider min/max so you can still proceed. */
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-order]');
+  if (!btn) return;
 
-  const qty = Number(prompt(`Quantity (any amount — provider shows min ${svc.min}, max ${svc.max})`));
-  if(!qty || qty < 1){ alert('Invalid quantity'); return; }
+  const id    = Number(btn.dataset.id);
+  const min   = Number(btn.dataset.min || 1);
+  const max   = Number(btn.dataset.max || 1);
+  const price = Number(btn.dataset.price || 0);
+  const label = btn.dataset.name || 'Service';
 
-  const pricePerUnit = svc.price_per_1k / 1000;
-  const estCost = (qty * pricePerUnit).toFixed(2);
+  const link = prompt(`Paste target link for ${label}:`);
+  if (!link) return;
 
-  if(!confirm(`Estimated cost: $${estCost}. Place order?`)) return;
+  let qty;
+  while (true) {
+    const raw = prompt(`Enter quantity (provider shows min ${min}, max ${max}). Any positive number allowed.`);
+    if (raw === null) return;
+    qty = Number(raw);
+    if (Number.isFinite(qty) && qty > 0 && Number.isInteger(qty)) break;
+    alert('Please enter a whole number greater than 0.');
+  }
 
-  placeOrder(svc.id, link, qty).then(r=>{
-    if(r.error) alert('Error: '+r.error);
-    else alert('Order placed! ID: '+r.order);
-  }).catch(e=>alert('Network issue: '+e.message));
-}
+  const estimate = (qty / 1000) * price;
+  let proceed = true;
+  if (qty < min || qty > max) {
+    proceed = confirm(
+      `Warning: ${qty} is outside provider range (${min}–${max}).\n` +
+      `We’ll submit it anyway, but the provider may reject it.\n\n` +
+      `Estimated charge: $${estimate.toFixed(4)}\nProceed?`
+    );
+  } else {
+    proceed = confirm(`Estimated charge: $${estimate.toFixed(4)}\nProceed?`);
+  }
+  if (!proceed) return;
+
+  try {
+    const r = await placeOrder(id, link, qty);
+    if (r.error) alert(`Error: ${r.error}`);
+    else alert(`Order placed! ID: ${r.order}`);
+  } catch(err){
+    alert(`Network issue: ${err.message}`);
+  }
+});
 
 load();
 </script>
