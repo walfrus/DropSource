@@ -63,6 +63,22 @@
   }
   .price-badge .per{color:var(--muted);font-weight:500;margin-left:4px}
 
+  /* modal */
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;
+  }
+  .modal{width:min(900px,100%);background:#0f1119;border:1px solid #2a2d34;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
+  .modal header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #222532}
+  .modal header h4{margin:0;font-size:16px}
+  .modal .body{padding:12px 12px 16px;max-height:65vh;overflow:auto}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{font-size:13px;text-align:left;padding:8px 10px;background:#141728;border:1px solid #25283a}
+  th{position:sticky;top:0;background:#171a2b;z-index:1}
+  tr td:first-child, tr th:first-child{border-top-left-radius:8px;border-bottom-left-radius:8px}
+  tr td:last-child, tr th:last-child{border-top-right-radius:8px;border-bottom-right-radius:8px}
+  .chipline{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{padding:2px 6px;border-radius:999px;background:#1b1c2a;border:1px solid #2b2d3d;color:#c8cbe6;font-size:11px}
+  .close{background:#121422;border:1px solid #2a2d34}
   .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
   #err{margin-top:12px;color:#ff6b6b;font-size:12px}
 </style>
@@ -81,10 +97,36 @@
     <button id="showAll" class="ghost"><img src="/icons/allproducts.svg" class="ico" alt=""> All products</button>
     <button id="expandAll" class="ghost">Expand all</button>
     <button id="collapseAll" class="ghost">Collapse all</button>
+    <button id="toggleView" class="ghost">Show variants inline</button>
     <span class="count" id="totalCount"></span>
   </div>
   <div id="sections"></div>
   <div id="err"></div>
+</div>
+
+<!-- VARIANT MODAL -->
+<div id="modalWrap" class="modal-backdrop" role="dialog" aria-modal="true">
+  <div class="modal">
+    <header>
+      <h4 id="modalTitle">Variants</h4>
+      <button id="modalClose" class="close">Close</button>
+    </header>
+    <div class="body">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:38%">Variant</th>
+            <th>Tags</th>
+            <th>Min</th>
+            <th>Max</th>
+            <th>Price /1k</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="variantRows"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <div class="footer">Powered by DropSource • your growth plug, but like… responsibly ✌️</div>
@@ -99,12 +141,18 @@ const elTotal = document.getElementById('totalCount');
 const elExpandAll = document.getElementById('expandAll');
 const elCollapseAll = document.getElementById('collapseAll');
 const elShowAll = document.getElementById('showAll');
+const elToggleView = document.getElementById('toggleView');
+const modalWrap = document.getElementById('modalWrap');
+const modalClose = document.getElementById('modalClose');
+const modalTitle = document.getElementById('modalTitle');
+const variantRows = document.getElementById('variantRows');
 
 /* state */
 let ALL_SERVICES = [];
 let COLLAPSED = new Set();
+let SHOW_VARIANTS_INLINE = false; // default to collapsed variant view
 
-/* ===== ICONS (match /public/icons) ===== */
+/* ===== ICONS ===== */
 const ICON_PATHS = {
   instagram:'instagram.svg',
   tiktok:'tiktok.svg',
@@ -130,19 +178,15 @@ const ICON_PATHS = {
   mixcloud:'mixcloud.svg',
   rumble:'rumble.svg',
   imdb:'imdb.svg',
-
-  /* specials */
   maskedtraffic:'maskedtraffic.svg',
   websitepremium:'websitepremium.svg',
   webtraffic:'webtraffic.svg',
   webtrafficgeo:'webtraffic.svg',
-  ownwebsite:'ownwebsite.svg',
-
-  /* fallback */
+  ownwebsite:'onwebsite.svg',
   other:'other.svg'
 };
 
-/* platform accent colors for the hover ring */
+/* platform accent colors */
 const PLATFORM_ACCENTS = {
   instagram:'#e1306c', youtube:'#ff0033', tiktok:'#29bdb1', facebook:'#1877f2',
   twitter:'#1d9bf0', spotify:'#1db954', telegram:'#2aabee', threads:'#ffffff',
@@ -180,8 +224,6 @@ const PLATFORM_RULES = [
   {slug:'mixcloud',re:/\bmixcloud\b/i},
   {slug:'rumble',re:/\brumble\b/i},
   {slug:'imdb',re:/\bimdb\b/i},
-
-  /* specials / traffic */
   {slug:'maskedtraffic',re:/\bmasked\b.*\btraffic\b/i},
   {slug:'websitepremium',re:/\bwebsite\b.*\bpremium\b/i},
   {slug:'webtrafficgeo',re:/\bweb\b.*\bgeo\b.*\btraffic\b/i},
@@ -262,35 +304,39 @@ function uniqueServices(list){
   return list.filter(s=>{const k=dedupeKey(s);if(seen.has(k))return false;seen.add(k);return true;});
 }
 
-/* ===== QUAL CHIPS ===== */
+/* ===== CHIPS ===== */
 const COUNTRY_WORDS = [
   'usa','uk','germany','france','italy','spain','canada','brazil','india','japan','korea','korean',
   'turkey','mexico','australia','russia','uae','saudi','indonesia','vietnam','thailand','philippines'
 ];
+function chipListForName(name){
+  const n = (name||'').toLowerCase();
+  const out = [];
+  if (/ultra\s*hq|premium/.test(n)) out.push('Premium');
+  if (/\bhq\b|high\s*quality/.test(n)) out.push('HQ');
+  if (/fast|instant|speed/i.test(n)) out.push('Fast');
+  if (/cheapest|cheap/i.test(n)) out.push('Cheapest');
+  if (/old\s*accounts?/i.test(n)) out.push('Old Accounts');
+  if (/verified/i.test(n)) out.push('Verified');
+  if (/real\b/.test(n)) out.push('Real');
+  if (/\bgeo\b/i.test(n)) out.push('Geo');
+  for (const c of COUNTRY_WORDS){ if (n.includes(c)) { out.push(c.toUpperCase()); break; } }
+  return out;
+}
 function renderQualChips(s){
-  const name = (s.name || '').toLowerCase();
   const chips = [];
-  if (s.min) chips.push(`<span class="pill">Min ${s.min}</span>`);
-  if (s.max) chips.push(`<span class="pill">Max ${s.max}</span>`);
-  if (s.dripfeed) chips.push(`<span class="pill">Dripfeed</span>`);
-  if (s.refill) chips.push(`<span class="pill">Refill</span>`);
-  if (/ultra\s*hq|premium/.test(name)) chips.push(`<span class="pill">Premium</span>`);
-  if (/\bhq\b|high\s*quality/.test(name)) chips.push(`<span class="pill">HQ</span>`);
-  if (/fast|instant|speed/i.test(name)) chips.push(`<span class="pill">Fast</span>`);
-  if (/cheapest|cheap/i.test(name)) chips.push(`<span class="pill">Cheapest</span>`);
-  if (/old\s*accounts?/i.test(name)) chips.push(`<span class="pill">Old Accounts</span>`);
-  if (/verified/i.test(name)) chips.push(`<span class="pill">Verified</span>`);
-  if (/real\b/.test(name)) chips.push(`<span class="pill">Real</span>`);
-  if (/\bgeo\b/i.test(name)) chips.push(`<span class="pill">Geo</span>`);
-  for (const c of COUNTRY_WORDS){ if (name.includes(c)) { chips.push(`<span class="pill">${c.toUpperCase()}</span>`); break; } }
-  return chips;
+  if (s.min) chips.push(`Min ${s.min}`);
+  if (s.max) chips.push(`Max ${s.max}`);
+  if (s.dripfeed) chips.push('Dripfeed');
+  if (s.refill) chips.push('Refill');
+  return chips.concat(chipListForName(s.name)).map(t=>`<span class="pill">${t}</span>`);
 }
 function accentFor(svc){
   const slug = getPlatformSlug(svc.category || svc.name || '');
   return PLATFORM_ACCENTS[slug] || PLATFORM_ACCENTS.other;
 }
 
-/* ===== FETCH + GROUP + RENDER ===== */
+/* ===== FETCH ===== */
 async function fetchServices(){
   try{
     const res=await fetch('/api/services');
@@ -301,6 +347,7 @@ async function fetchServices(){
   }catch(err){elErr.textContent='Load error: '+(err?.message||err);}
 }
 
+/* ===== GROUPING ===== */
 function groupByPlatform(services, query=''){
   const out=new Map();
   services.forEach(s=>{
@@ -313,40 +360,56 @@ function groupByPlatform(services, query=''){
   return out;
 }
 
+/* group into BASE = Platform + Product; variants = services */
+function groupIntoBases(services){
+  const bases = new Map();
+  for (const s of services){
+    const slug = getPlatformSlug(s.category||s.name||'');
+    const product = extractProduct(s.name||'', s.category||'');
+    const baseKey = `${slug}|${product}`;
+    if (!bases.has(baseKey)) bases.set(baseKey, { slug, product, items: []});
+    bases.get(baseKey).items.push(s);
+  }
+  return bases;
+}
+
+/* ===== RENDER ===== */
 function render(){
   const q=(elQ.value||'').toLowerCase();
-  const groups=groupByPlatform(ALL_SERVICES,q);
+  const platformGroups=groupByPlatform(ALL_SERVICES,q);
 
   const priority=['instagram','tiktok','youtube','facebook','spotify','telegram','twitter','threads','soundcloud','pinterest','reddit','linkedin','twitch','vk','okru','audiomack','reverbnation','tidal','shazam','dailymotion','datpiff','mixcloud','rumble','imdb','webtraffic','webtrafficgeo','websitepremium','maskedtraffic','ownwebsite','other'];
-  const ordered=[...groups.keys()].sort((a,b)=>{
+  const ordered=[...platformGroups.keys()].sort((a,b)=>{
     const ai=priority.indexOf(a), bi=priority.indexOf(b);
     if(ai!==-1 || bi!==-1) return (ai===-1?999:ai) - (bi===-1?999:bi);
-    return groups.get(b).length - groups.get(a).length;
+    return platformGroups.get(b).length - platformGroups.get(a).length;
   });
 
-  const total=[...groups.values()].reduce((n,arr)=>n+arr.length,0);
+  const total=[...platformGroups.values()].reduce((n,arr)=>n+arr.length,0);
   elTotal.textContent = `${total.toLocaleString()} services`;
 
   elSections.innerHTML='';
   for(const slug of ordered){
-    const items=groups.get(slug);
-    if(!items || !items.length) continue;
+    const services=platformGroups.get(slug);
+    if(!services || !services.length) continue;
 
     const section=document.createElement('section');
     section.className='section'+(COLLAPSED.has(slug)?' collapsed':'');
     section.dataset.slug=slug;
 
+    const bodyHtml = SHOW_VARIANTS_INLINE
+      ? `<div class="grid">${services.map(cardHtmlFlat).join('')}</div>`
+      : renderGroupedCards(services);
+
     section.innerHTML=`
       <div class="section-header">
         <img src="/icons/${ICON_PATHS[slug]||ICON_PATHS.other}" alt="">
         <div class="section-title">${slugLabel(slug)}</div>
-        <div class="section-meta">${items.length.toLocaleString()} services</div>
+        <div class="section-meta">${services.length.toLocaleString()} ${SHOW_VARIANTS_INLINE?'items':'services'} </div>
         <div class="chev">▾</div>
       </div>
       <div class="section-body" style="${COLLAPSED.has(slug)?'display:none':''}">
-        <div class="grid">
-          ${items.map(cardHtml).join('')}
-        </div>
+        ${bodyHtml}
       </div>
     `;
 
@@ -360,10 +423,11 @@ function render(){
   }
 }
 
-function cardHtml(s){
+/* --------- FLAT CARD (old view) ---------- */
+function cardHtmlFlat(s){
   const titleText=prettyTitle(s);
   const price=(typeof s.price_per_1k==='number'&&isFinite(s.price_per_1k))?`$${s.price_per_1k.toFixed(2)}`:'-';
-  const ring = accentFor(s) + '55'; // 33% alpha
+  const ring = accentFor(s) + '55';
   return `
     <div class="card" style="--ring:${ring}">
       <h3><span class="brand">[DropSource]</span> — ${escapeHtml(titleText)}</h3>
@@ -379,10 +443,104 @@ function cardHtml(s){
   `;
 }
 
-/* utils */
+/* --------- GROUPED CARDS (collapsed variants) ---------- */
+function renderGroupedCards(services){
+  const bases = groupIntoBases(services);
+  const cards = [];
+  for (const {slug, product, items} of bases.values()){
+    // cheapest price shown on tile
+    const cheapest = items.reduce((a,b)=>(a?.price_per_1k||Infinity) < (b?.price_per_1k||Infinity) ? a : b, null);
+    const ring = (PLATFORM_ACCENTS[slug] || PLATFORM_ACCENTS.other) + '55';
+    const title = `${slugLabel(slug)} ${product}`;
+    const count = items.length;
+    const chips = summarizeVariantChips(items).map(t=>`<span class="pill">${t}</span>`).join('');
+
+    cards.push(`
+      <div class="card" style="--ring:${ring}">
+        <h3><span class="brand">[DropSource]</span> — ${escapeHtml(title)}</h3>
+        <div class="muted">${count} variant${count>1?'s':''} available</div>
+        <div class="row" style="margin:10px 0 12px">${chips}</div>
+        <div class="row" style="justify-content:space-between">
+          <button onclick='openVariants(${JSON.stringify({title,slug})})'>View variants</button>
+          <button onclick='openOrder(${JSON.stringify(cheapest)})'>Order cheapest</button>
+        </div>
+        <div class="price-badge">${priceFmt(cheapest)}<span class="per">/ 1k</span></div>
+      </div>
+    `);
+  }
+  return `<div class="grid">${cards.join('')}</div>`;
+}
+
+function summarizeVariantChips(items){
+  // make a compact overview across variants (e.g., HQ, Fast, Refill, Geo, USA)
+  const tags = new Set();
+  let minMin = Infinity, maxMax = 0;
+  for (const s of items){
+    minMin = Math.min(minMin, s.min||Infinity);
+    maxMax = Math.max(maxMax, s.max||0);
+    for (const t of chipListForName(s.name)) tags.add(t);
+    if (s.refill) tags.add('Refill');
+    if (s.dripfeed) tags.add('Dripfeed');
+  }
+  const out = [];
+  if (isFinite(minMin)) out.push(`Min ${minMin}`);
+  if (maxMax>0) out.push(`Max ${maxMax.toLocaleString()}`);
+  // cap at ~6 chips so it doesn’t get nuts
+  for (const t of tags){ if (out.length>=6) break; out.push(t); }
+  return out;
+}
+
+/* ===== MODAL ===== */
+function priceFmt(s){ return (typeof s?.price_per_1k==='number' && isFinite(s.price_per_1k)) ? `$${s.price_per_1k.toFixed(2)}` : '-'; }
+
+function openVariants(meta){
+  // meta: {title, slug}
+  const {title, slug} = meta||{};
+  modalTitle.textContent = title || 'Variants';
+  variantRows.innerHTML = '';
+
+  // gather variants for this base
+  const baseItems = ALL_SERVICES.filter(s=>{
+    const sl = getPlatformSlug(s.category||s.name||'');
+    return sl===slug && extractProduct(s.name||'', s.category||'') && (`${slugLabel(sl)} ${extractProduct(s.name||'', s.category||'')}` === title);
+  });
+
+  // fallback: if the stricter match found nothing (edge cases), match by slug + product only
+  const product = (title||'').split(' ').slice(1).join(' ');
+  const variants = baseItems.length ? baseItems : ALL_SERVICES.filter(s=>getPlatformSlug(s.category||s.name||'')===slug && extractProduct(s.name||'', s.category||'')===product);
+
+  for (const s of variants){
+    const cleaned = cleanNoise(s.name||s.title||'');
+    const chips = renderQualChips(s).map(x=>x.replace('class="pill"','class="chip"')).join('');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(cleaned)}</td>
+      <td><div class="chipline">${chips}</div></td>
+      <td>${s.min ?? ''}</td>
+      <td>${s.max ? Number(s.max).toLocaleString() : ''}</td>
+      <td>${priceFmt(s)}</td>
+      <td><button onclick='openOrder(${JSON.stringify(s)})'>Order</button></td>
+    `;
+    variantRows.appendChild(tr);
+  }
+
+  modalWrap.style.display='flex';
+}
+modalClose.addEventListener('click', ()=> modalWrap.style.display='none');
+modalWrap.addEventListener('click', (e)=>{ if(e.target===modalWrap) modalWrap.style.display='none'; });
+
+/* --------- utils --------- */
 function escapeHtml(x){return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||''}
 async function placeOrder(id,link,qty,runs,interval){const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:id,link,quantity:qty,runs,interval})});return res.json();}
-function openOrder(svc){const link=prompt('Paste the target link (post/profile URL):');if(!link)return;const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));if(!qty||qty<svc.min||qty>svc.max){alert('Quantity out of range');return;}placeOrder(svc.id,link,qty).then(r=>{if(r.error)alert('Error: '+r.error);else alert('Order placed! ID: '+r.order);}).catch(e=>alert('Network issue: '+e.message));}
+function openOrder(svc){
+  const link=prompt('Paste the target link (post/profile URL):'); if(!link) return;
+  const qty=Number(prompt(`Quantity (min ${svc.min}, max ${svc.max})`));
+  if(!qty||qty<svc.min||qty>svc.max){ alert('Quantity out of range'); return; }
+  placeOrder(svc.id,link,qty).then(r=>{
+    if(r.error) alert('Error: '+r.error);
+    else alert('Order placed! ID: '+r.order);
+  }).catch(e=>alert('Network issue: '+e.message));
+}
 
 /* events */
 elQ.addEventListener('input', render);
@@ -395,6 +553,11 @@ elCollapseAll.addEventListener('click', ()=>{
 elShowAll.addEventListener('click', ()=>{
   elQ.value = '';
   COLLAPSED.clear();
+  render();
+});
+elToggleView.addEventListener('click', ()=>{
+  SHOW_VARIANTS_INLINE = !SHOW_VARIANTS_INLINE;
+  elToggleView.textContent = SHOW_VARIANTS_INLINE ? 'Collapse variants' : 'Show variants inline';
   render();
 });
 
