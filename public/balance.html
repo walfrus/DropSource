@@ -25,21 +25,28 @@
     }
 
     // fetch wallet balance
-    fetch('/api/wallet/get', {
-      headers: {
-        'x-user-id': 'demo_123',   // 🔧 replace with logged in user
-        'x-user-email': 'demo@example.com'
-      }
-    })
-    .then(r => r.json())
-    .then(data => {
-      document.getElementById('balance').textContent =
-        `Current balance: $${(data.balance_cents/100).toFixed(2)} ${data.currency.toUpperCase()}`;
-    })
-    .catch(err => {
-      document.getElementById('balance').textContent = '⚠️ Could not load balance';
-      console.error(err);
-    });
-  </script>
+   const qs = new URLSearchParams(window.location.search);
+const uid   = qs.get('uid')   || 'demo_123';
+const email = qs.get('email') || 'demo@example.com';
+
+  if (params.has('ok')) {
+    document.getElementById('status').innerHTML = '<span class="ok">✅ Payment successful! Wallet will update shortly.</span>';
+  } else if (params.has('canceled')) {
+    document.getElementById('status').innerHTML = '<span class="canceled">❌ Payment canceled.</span>';
+  }
+
+  fetch('/api/wallet/get', {
+    headers: { 'x-user-id': uid, 'x-user-email': email }
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('balance').textContent =
+      `Current balance: $${(data.balance_cents/100).toFixed(2)} ${String(data.currency||'usd').toUpperCase()}`;
+  })
+  .catch(err => {
+    document.getElementById('balance').textContent = '⚠️ Could not load balance';
+    console.error(err);
+  });
+</script>
 </body>
 </html>
