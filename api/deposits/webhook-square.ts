@@ -1,48 +1,183 @@
-import { createHmac, timingSafeEqual } from "crypto";
-import { getSb, creditDepositByPaymentLinkId, logWebhook } from "../__lib.js";
+// /api/deposits/webhook-square.ts
+import { readRawBody, crypto } from '../../lib/smm.js';
+import { sb } from '../../lib/db.js';
 
-const isSandbox = (process.env.SQUARE_ENV || "").toLowerCase() !== "production";
-const BYPASS_HEADER = "x-debug-no-verify";
-const SIG_HEADER_A = "x-square-signature";
-const SIG_HEADER_B = "x-square-hmacsha256-signature";
-const SECRET = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || "";
+type AnyObj = Record<string, any>;
 
-function fail(res: any, code: number, msg: string) {
-  res.status(code).json({ error: msg });
+function noStore(res: any) {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+}
+
+// best-effort DB+console logger (never throws)
+async function safeLog(event: string, payload?: any, http_status = 200) {
+  try {
+    console.log(`[square:${event}]`, JSON.stringify(payload ?? {}, null, 2));
+  } catch {}
+  try {
+    await sb.from('webhook_logs').insert({
+      source: 'square',
+      event,
+      http_status,
+      payload: payload ?? null,
+    });
+  } catch {}
+}
+
+function extractPaymentLinkId(body: any): string | null {
+  const d = body?.data;
+  const obj = d?.object ?? d?.data ?? body?.object ?? {};
+  const candidates: Array<any> = [
+    obj?.payment_link?.id,
+    obj?.payment_link_id,
+    obj?.payment?.payment_link_id,
+    obj?.checkout?.payment_link?.id,
+    obj?.checkout?.payment_link_id,
+    obj?.payment_link?.payment_link_id,
+    obj?.order?.payment_link_id,
+    body?.data?.object?.order?.payment_link_id,
+  ];
+  for (const c of candidates) if (typeof c === 'string' && c.trim()) return c.trim();
+  return null;
+}
+
+function extractPaymentStatus(body: any): string | null {
+  const status =
+    body?.data?.object?.payment?.status ??
+    body?.data?.object?.status ??
+    body?.data?.object?.payment_link?.status ??
+    null;
+  return typeof status === 'string' ? status.toUpperCase() : null;
+}
+
+function extractEventType(body: any): string {
+  return String(body?.type || body?.event_type || '').toUpperCase();
 }
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== "POST") return fail(res, 405, "Method not allowed");
-
-  const raw = typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {});
-  const skipVerify = isSandbox || req.headers[BYPASS_HEADER] === "1" || process.env.DEBUG_NO_VERIFY === "1";
-
-  if (!skipVerify) {
-    const headerSig = String(req.headers[SIG_HEADER_A] || req.headers[SIG_HEADER_B] || "");
-    if (!headerSig || !SECRET) return fail(res, 400, "missing signature");
-    const computed = createHmac("sha256", SECRET).update(raw).digest("base64");
-    const ok = computed.length === headerSig.length &&
-      timingSafeEqual(Buffer.from(computed), Buffer.from(headerSig));
-    if (!ok) return fail(res, 400, "signature mismatch");
+  if (req.method !== 'POST') {
+    res.statusCode = 405; res.setHeader('Allow', 'POST'); noStore(res); res.end('Method not allowed');
+    return;
   }
 
-  const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
-  const type = String(body?.type || body?.event_type || "").toUpperCase();
-  const payment = body?.data?.object?.payment ?? body?.data?.payment ?? {};
-  const status = String(payment?.status || "").toUpperCase();
-  const payment_link_id =
-    payment?.payment_link_id ??
-    body?.data?.object?.payment_link?.id ??
-    body?.data?.object?.order?.payment_link_id;
+  try {
+    const raw = await readRawBody(req);
 
-  const sb = getSb();
-  await logWebhook(sb, "square", body, { status, type, payment_link_id });
+    const headerSig =
+      (req.headers['x-square-signature'] as string) ||
+      (req.headers['x-square-hmacsha256-signature'] as string) ||
+      (req.headers['x-square-hmacsha256'] as string) ||
+      '';
 
-  if (type.includes("PAYMENT") && status === "COMPLETED" && payment_link_id) {
-    const result = await creditDepositByPaymentLinkId(sb, payment_link_id);
-    if (!result.ok) return res.status(200).json({ ok: false, reason: result.reason });
-    return res.status(200).json({ ok: true, credited_cents: result.amount_cents, user_id: result.user_id });
+    const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
+    const bypass = process.env.DEBUG_NO_VERIFY === '1' || String(req.headers['x-debug-no-verify'] || '') === '1';
+
+    if (!bypass) {
+      if (!headerSig || !key) {
+        await safeLog('missing_signature', { headerSigPresent: !!headerSig, keyPresent: !!key }, 200);
+        res.statusCode = 200; noStore(res); res.end('missing signature');
+        return;
+      }
+      // Scheme A: HMAC(raw)
+      const expA = crypto.createHmac('sha256', key).update(raw).digest('base64');
+      // Scheme B: HMAC(url + raw)
+      const baseUrl = process.env.PUBLIC_URL ? String(process.env.PUBLIC_URL).replace(/\/$/, '') : '';
+      const endpoint = baseUrl ? `${baseUrl}/api/deposits/webhook-square` : '';
+      const expB = endpoint ? crypto.createHmac('sha256', key).update(endpoint + raw).digest('base64') : '';
+
+      const eq = (a: string, b: string) => {
+        if (!a || !b) return false;
+        try { return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b)); } catch { return a === b; }
+      };
+
+      if (!(eq(headerSig, expA) || (expB && eq(headerSig, expB)))) {
+        await safeLog('sig_mismatch', { headerSig, expAKnown: !!expA, expBKnown: !!expB }, 200);
+        res.statusCode = 200; noStore(res); res.end('bad signature');
+        return;
+      }
+    } else {
+      await safeLog('debug_no_verify', { note: 'skipping signature verification' }, 200);
+    }
+
+    // parse json
+    let body: AnyObj = {};
+    try { body = JSON.parse(raw.toString('utf8')); }
+    catch (e) {
+      await safeLog('bad_json', { error: String(e) }, 200);
+      res.statusCode = 200; noStore(res); res.end('bad json');
+      return;
+    }
+
+    await safeLog('incoming', { type: body?.type, sample: body?.data?.id || null }, 200);
+
+    const type = extractEventType(body);
+    const status = extractPaymentStatus(body);
+    const plinkId = extractPaymentLinkId(body);
+
+    if (!plinkId) {
+      await safeLog('no_payment_link_id', { type, status }, 200);
+      res.statusCode = 200; noStore(res); res.end('ok');
+      return;
+    }
+
+    const depSel = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
+    const dep = depSel.data as any;
+    if (!dep) {
+      await safeLog('deposit_not_found', { plinkId }, 200);
+      res.statusCode = 200; noStore(res); res.end('ok');
+      return;
+    }
+
+    // idempotency: don't double-credit
+    if (String(dep.status).toLowerCase() === 'paid') {
+      await safeLog('already_paid', { deposit_id: dep.id, plinkId }, 200);
+      res.statusCode = 200; noStore(res); res.end('already');
+      return;
+    }
+
+    // decide terminal states
+    const typeIsPayment = type.includes('PAYMENT');
+    const completed = (typeIsPayment && type.includes('COMPLETED')) || status === 'COMPLETED' || status === 'CAPTURED' || status === 'APPROVED';
+    const canceledOrFailed = (typeIsPayment && (type.includes('CANCELED') || type.includes('FAILED'))) || status === 'CANCELED' || status === 'FAILED' || status === 'DECLINED';
+
+    if (completed) {
+      // mark paid + store payload
+      const upd = await sb.from('deposits').update({ status: 'paid', provider_payload: body }).eq('id', dep.id);
+      if (upd.error) {
+        await safeLog('mark_paid_failed', { deposit_id: dep.id, err: upd.error.message }, 200);
+        res.statusCode = 200; noStore(res); res.end('mark fail');
+        return;
+      }
+
+      // ensure wallet exists
+      const wSel = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).maybeSingle?.() ?? await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
+      if (!('data' in wSel) || !wSel.data) {
+        try { await sb.from('wallets').insert({ user_id: dep.user_id, balance_cents: 0, currency: 'usd' }); } catch {}
+      }
+      const current = Number((wSel as any)?.data?.balance_cents ?? 0);
+      const next = current + Number(dep.amount_cents || 0);
+
+      const wUpd = await sb.from('wallets').update({ balance_cents: next, updated_at: new Date().toISOString() }).eq('user_id', dep.user_id);
+      if (wUpd.error) {
+        await safeLog('wallet_update_failed', { user_id: dep.user_id, err: wUpd.error.message }, 200);
+        res.statusCode = 200; noStore(res); res.end('wallet fail');
+        return;
+      }
+
+      await safeLog('wallet_credited', { deposit_id: dep.id, user_id: dep.user_id, amount_cents: dep.amount_cents, next_balance_cents: next }, 200);
+    } else if (canceledOrFailed) {
+      await sb.from('deposits').update({ status: 'canceled', provider_payload: body }).eq('id', dep.id);
+      await safeLog('marked_canceled', { deposit_id: dep.id, plinkId, status, type }, 200);
+    } else {
+      // non-terminal — stash payload so we can inspect later
+      try { await sb.from('deposits').update({ provider_payload: body }).eq('id', dep.id); } catch {}
+      await safeLog('ignored_event', { type, status, plinkId }, 200);
+    }
+
+    res.statusCode = 200; noStore(res); res.end('ok');
+  } catch (e: any) {
+    await safeLog('handler_error', { error: String(e?.message || e) }, 200);
+    res.statusCode = 200; noStore(res); res.end('ok');
   }
-
-  return res.status(200).json({ ok: true, ignored: true });
 }

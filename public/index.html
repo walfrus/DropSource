@@ -309,51 +309,6 @@ async function placeOrder(serviceId, link, quantity, runs, interval){
   return res.json();
 }
 
-/* Global event delegation for all order buttons. Allows any positive qty,
-   but warns if outside provider min/max so you can still proceed. */
-document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-order]');
-  if (!btn) return;
-
-  const id    = Number(btn.dataset.id);
-  const min   = Number(btn.dataset.min || 1);
-  const max   = Number(btn.dataset.max || 1);
-  const price = Number(btn.dataset.price || 0);
-  const label = btn.dataset.name || 'Service';
-
-  const link = prompt(`Paste target link for ${label}:`);
-  if (!link) return;
-
-  let qty;
-  while (true) {
-    const raw = prompt(`Enter quantity (provider shows min ${min}, max ${max}). Any positive number allowed.`);
-    if (raw === null) return;
-    qty = Number(raw);
-    if (Number.isFinite(qty) && qty > 0 && Number.isInteger(qty)) break;
-    alert('Please enter a whole number greater than 0.');
-  }
-
-  const estimate = (qty / 1000) * price;
-  let proceed = true;
-  if (qty < min || qty > max) {
-    proceed = confirm(
-      `Warning: ${qty} is outside provider range (${min}–${max}).\n` +
-      `We’ll submit it anyway, but the provider may reject it.\n\n` +
-      `Estimated charge: $${estimate.toFixed(4)}\nProceed?`
-    );
-  } else {
-    proceed = confirm(`Estimated charge: $${estimate.toFixed(4)}\nProceed?`);
-  }
-  if (!proceed) return;
-
-  try {
-    const r = await placeOrder(id, link, qty);
-    if (r.error) alert(`Error: ${r.error}`);
-    else alert(`Order placed! ID: ${r.order}`);
-  } catch(err){
-    alert(`Network issue: ${err.message}`);
-  }
-});
 function orderClick(btn){
   const id    = Number(btn.dataset.id);
   const min   = Number(btn.dataset.min || 1);
@@ -380,10 +335,10 @@ function orderClick(btn){
     proceed = confirm(
       `Warning: ${qty} is outside provider range (${min}–${max}).\n` +
       `We’ll submit it anyway, but the provider may reject it.\n\n` +
-      `Estimated charge: $${estimate.toFixed(4)}\nProceed?`
+      `Estimated charge: $${estimate.toFixed(2)}\nProceed?`
     );
   } else {
-    proceed = confirm(`Estimated charge: $${estimate.toFixed(4)}\nProceed?`);
+    proceed = confirm(`Estimated charge: $${estimate.toFixed(2)}\nProceed?`);
   }
   if (!proceed) return;
 

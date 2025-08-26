@@ -1,80 +1,158 @@
-// api/deposits/create-square.ts
-import { randomBytes } from "crypto";
-import { getSb, ensureUserAndWallet, recordDeposit } from "../wallet/_lib.js";
+// /api/deposits/create-square.ts
+import { randomBytes } from 'crypto';
+import { readJsonBody, ensureUserAndWallet } from '../../lib/smm.js';
+import { getUser } from '../../lib/auth.js';
+import { sb } from '../../lib/db.js';
 
-const isSandbox =
-  (process.env.SQUARE_ENV ?? "sandbox").toLowerCase() !== "production";
-const BASE = isSandbox
-  ? "https://connect.squareupsandbox.com"
-  : "https://connect.squareup.com";
-const ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN!;
+type Json = Record<string, any>;
 
-type SquarePaymentLinkResponse = {
-  payment_link?: { url?: string; id?: string };
-  errors?: unknown;
-};
+function send(res: any, code: number, body: Json) {
+  res.statusCode = code;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.end(JSON.stringify(body));
+}
 
-function fail(res: any, code: number, msg: string) {
-  res.status(code).json({ error: msg });
+function dollarsToCents(x: any): number {
+  if (x == null || x === '') return NaN;
+  const n = Number(x);
+  if (!Number.isFinite(n)) return NaN;
+  return Math.round(n * 100);
 }
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== "POST") return fail(res, 405, "Method not allowed");
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return send(res, 405, { error: 'method_not_allowed' });
+  }
+
+  const user = getUser(req);
+  if (!user) return send(res, 401, { error: 'no user' });
+
+  const ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN || '';
+  if (!ACCESS_TOKEN) return send(res, 500, { error: 'missing SQUARE_ACCESS_TOKEN' });
+
+  const isProd = (process.env.SQUARE_ENV || '').toLowerCase() === 'production';
+  const BASE = isProd ? 'https://connect.squareup.com' : 'https://connect.squareupsandbox.com';
 
   try {
-    const uid = String(req.headers["x-user-id"] || "");
-    const email = (req.headers["x-user-email"] || "") as string;
-    if (!uid) return fail(res, 400, "missing user id");
+    const body = await readJsonBody(req);
 
-    const amount_cents = Number(req.body?.amount_cents ?? 0);
-    if (!Number.isFinite(amount_cents) || amount_cents <= 0) {
-      return fail(res, 400, "invalid amount_cents");
+    // accept amount_cents OR amount_dollars / amount
+    let amount_cents = Number(body?.amount_cents);
+    if (!Number.isFinite(amount_cents)) {
+      const alt = body?.amount_dollars ?? body?.amount;
+      amount_cents = dollarsToCents(alt);
+    }
+    if (!Number.isFinite(amount_cents)) amount_cents = 0;
+    amount_cents = Math.round(amount_cents);
+
+    if (amount_cents < 100) return send(res, 400, { error: 'min $1.00', hint: 'amount_cents >= 100' });
+
+    // ensure user + wallet rows exist
+    await ensureUserAndWallet(sb, user);
+
+    // create pending deposit record
+    const depIns = await sb
+      .from('deposits')
+      .insert({ user_id: user.id, method: 'square', amount_cents, status: 'pending' })
+      .select('*')
+      .single();
+
+    if (depIns.error) throw depIns.error;
+    const dep = depIns.data as any;
+
+    // choose location id (use configured first, else fetch)
+    let locationId = process.env.SQUARE_LOCATION_ID || '';
+    if (!locationId) {
+      const rLoc = await fetch(`${BASE}/v2/locations`, {
+        method: 'GET',
+        headers: {
+          'Square-Version': '2024-06-20',
+          'Authorization': `Bearer ${ACCESS_TOKEN}`
+        }
+      });
+      const jLoc = await rLoc.json().catch(() => ({}));
+      locationId = jLoc?.locations?.find((l: any) => l?.status === 'ACTIVE')?.id || jLoc?.locations?.[0]?.id || '';
+      if (!rLoc.ok || !locationId) throw new Error('No Square location found');
     }
 
-    const sb = getSb();
-    await ensureUserAndWallet(sb, { id: uid, email });
+    // build redirect back to balance page with user context (uid/email)
+    const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
+    const host = (req.headers['host'] as string) || '';
+    const baseUrl = process.env.PUBLIC_URL ? String(process.env.PUBLIC_URL) : `${proto}://${host}`;
+    const q = `uid=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email || '')}`;
+    const redirect = `${baseUrl.replace(/\/$/, '')}/balance.html?ok=1&${q}`;
 
-    // location
-    const locResp = await fetch(`${BASE}/v2/locations`, {
-      method: "GET",
-      headers: {
-        "Square-Version": "2024-06-20",
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-      },
-    });
-    const locJson = (await locResp.json()) as any;
-    const location_id =
-      locJson?.locations?.find((l: any) => l.status === "ACTIVE")?.id ??
-      locJson?.locations?.[0]?.id;
-    if (!location_id) return fail(res, 500, "no_location");
-
-    // redirect back to balance page
-    const proto = (req.headers["x-forwarded-proto"] as string) || "https";
-    const host = req.headers["host"] as string;
-    const redirectUrl = new URL(`${proto}://${host}/balance.html`);
-    redirectUrl.searchParams.set("ok", "1");
-    redirectUrl.searchParams.set("uid", uid);
-    if (email) redirectUrl.searchParams.set("email", email);
-
+    // create payment link
     const payload = {
-      idempotency_key: randomBytes(16).toString("hex"),
+      idempotency_key: `dep_${dep.id}_${Date.now()}_${randomBytes(6).toString('hex')}`,
       quick_pay: {
-        name: "Wallet Deposit",
-        price_money: { amount: amount_cents, currency: "USD" },
-        location_id,
+        name: 'DropSource Credits',
+        price_money: { amount: amount_cents, currency: 'USD' },
+        location_id: locationId,
       },
-      checkout_options: { redirect_url: redirectUrl.toString() },
-    };
+      checkout_options: { ask_for_shipping_address: false, redirect_url: redirect },
+    } as const;
 
-    const resp = await fetch(`${BASE}/v2/online-checkout/payment-links`, {
-      method: "POST",
+    const r = await fetch(`${BASE}/v2/online-checkout/payment-links`, {
+      method: 'POST',
       headers: {
-        "Square-Version": "2024-06-20",
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
+        'Square-Version': '2024-06-20',
+        'Authorization': `Bearer ${ACCESS_TOKEN}`,
       },
       body: JSON.stringify(payload),
     });
 
-    const json = (await resp.json()) as SquarePaymentLinkResponse;
-    if (!resp.ok
+    let json: any = null;
+    try { json = await r.json(); } catch {}
+
+    if (!r.ok) {
+      // mark failed + log for visibility
+      try {
+        await sb.from('deposits').update({ status: 'failed', provider_payload: json }).eq('id', dep.id);
+        await sb.from('webhook_logs').insert({
+          source: 'square',
+          event: 'create_failed',
+          http_status: r.status,
+          payload: { req: payload, res: json, depositId: dep.id },
+        });
+      } catch {}
+      return send(res, 400, { error: json?.errors?.[0]?.detail || 'square_failed', status: r.status });
+    }
+
+    const paymentLink = json?.payment_link;
+    await sb.from('deposits').update({ provider_id: paymentLink?.id || null, provider_payload: json }).eq('id', dep.id);
+
+    try {
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event: 'create_ok',
+        http_status: 200,
+        payload: { depositId: dep.id, provider_id: paymentLink?.id, url: paymentLink?.url, amount_cents },
+      });
+    } catch {}
+
+    return send(res, 200, {
+      url: paymentLink?.url,
+      deposit_id: dep.id,
+      payment_link_id: paymentLink?.id,
+      amount_cents,
+      method: 'square',
+      env: isProd ? 'production' : 'sandbox',
+      location_id: locationId,
+    });
+  } catch (e: any) {
+    try {
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event: 'create_exception',
+        http_status: 500,
+        payload: { error: String(e?.message || e) },
+      });
+    } catch {}
+    return send(res, 500, { error: e?.message || String(e) });
+  }
+}

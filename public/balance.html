@@ -7,46 +7,99 @@
     body { background:#0b0b0f; color:#e8ecf1; font:16px system-ui; padding:2rem; }
     .ok { color:#4caf50; }
     .canceled { color:#f44336; }
+    .muted { color:#a6acb3; }
+    .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
     .balance { margin-top:1rem; font-size:1.2rem; }
+    button { background:#11131a; border:1px solid #24262c; color:#e8ecf1; padding:.5rem .75rem; border-radius:10px; cursor:pointer }
+    button:hover { border-color:#59a0ff; }
   </style>
 </head>
 <body>
   <h1>Deposit Status</h1>
   <div id="status">Checking…</div>
+  <div class="row" style="margin-top:.5rem">
+    <div id="who" class="muted"></div>
+    <button id="refresh">Refresh balance</button>
+  </div>
   <div class="balance" id="balance"></div>
 
   <script>
-    // check query params
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('ok')) {
-      document.getElementById('status').innerHTML = '<span class="ok">✅ Payment successful! Wallet will update shortly.</span>';
-    } else if (params.has('canceled')) {
-      document.getElementById('status').innerHTML = '<span class="canceled">❌ Payment canceled.</span>';
+    // ——— helpers ———
+    function getCookie(name){
+      return document.cookie.split(';').map(s=>s.trim()).reduce((acc,p)=>{
+        const i=p.indexOf('='); if(i>0){ acc[p.slice(0,i)] = decodeURIComponent(p.slice(i+1)); } return acc;
+      }, {})[name];
+    }
+    function setCookie(name, value, maxAgeSec){
+      document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSec||2592000}; SameSite=Lax`;
+    }
+    function fmtUSD(cents){
+      const n = Number(cents||0)/100;
+      try { return n.toLocaleString(undefined,{style:'currency',currency:'USD'}); } catch { return `$${n.toFixed(2)}`; }
     }
 
-    // fetch wallet balance
-   const qs = new URLSearchParams(window.location.search);
-const uid   = qs.get('uid')   || 'demo_123';
-const email = qs.get('email') || 'demo@example.com';
+    // ——— identity ———
+    const params = new URLSearchParams(location.search);
+    let uid   = params.get('uid')   || getCookie('uid')   || '';
+    let email = params.get('email') || getCookie('email') || '';
 
-  if (params.has('ok')) {
-    document.getElementById('status').innerHTML = '<span class="ok">✅ Payment successful! Wallet will update shortly.</span>';
-  } else if (params.has('canceled')) {
-    document.getElementById('status').innerHTML = '<span class="canceled">❌ Payment canceled.</span>';
-  }
+    // If provided via query, persist to cookies for future hits
+    if (params.get('uid'))   setCookie('uid', uid);
+    if (params.get('email')) setCookie('email', email);
 
-  fetch('/api/wallet/get', {
-    headers: { 'x-user-id': uid, 'x-user-email': email }
-  })
-  .then(r => r.json())
-  .then(data => {
-    document.getElementById('balance').textContent =
-      `Current balance: $${(data.balance_cents/100).toFixed(2)} ${String(data.currency||'usd').toUpperCase()}`;
-  })
-  .catch(err => {
-    document.getElementById('balance').textContent = '⚠️ Could not load balance';
-    console.error(err);
-  });
-</script>
+    // Show who context (obfuscated email)
+    const whoEl = document.getElementById('who');
+    if (uid || email) {
+      const obEmail = email ? email.replace(/(^.).*(@.*$)/, (m,a,b)=> a+'***'+b) : '';
+      whoEl.textContent = `User: ${uid || '—'}  ${obEmail ? `• ${obEmail}` : ''}`;
+    } else {
+      whoEl.textContent = 'User: not set (open from your checkout link so we know who to credit)';
+    }
+
+    // ——— status banner ———
+    const statusEl = document.getElementById('status');
+    if (params.has('ok')) {
+      statusEl.innerHTML = '<span class="ok">✅ Payment successful! Waiting for credit…</span> <span class="muted">(auto-refreshing)</span>';
+    } else if (params.has('canceled')) {
+      statusEl.innerHTML = '<span class="canceled">❌ Payment canceled.</span>';
+    } else {
+      statusEl.textContent = 'Ready';
+    }
+
+    const balEl = document.getElementById('balance');
+
+    async function fetchBalance(){
+      if (!uid) { balEl.textContent = '⚠️ Missing user id (uid).'; return; }
+      try {
+        const r = await fetch('/api/wallet/get', {
+          method:'GET',
+          headers: { 'x-user-id': uid, 'x-user-email': email || '' },
+          cache: 'no-store'
+        });
+        const data = await r.json();
+        const dollars = fmtUSD(data.balance_cents);
+        balEl.textContent = `Current balance: ${dollars} ${String(data.currency||'usd').toUpperCase()}`;
+      } catch(e){
+        console.error(e);
+        balEl.textContent = '⚠️ Could not load balance';
+      }
+    }
+
+    // manual refresh button
+    document.getElementById('refresh').addEventListener('click', fetchBalance);
+
+    // initial fetch
+    fetchBalance();
+
+    // short auto-poll after success so wallet shows up without manual refresh
+    if (params.has('ok')) {
+      let tries = 0; const maxTries = 20; // ~60s at 3s interval
+      const iv = setInterval(async ()=>{
+        tries++;
+        await fetchBalance();
+        if (tries >= maxTries) clearInterval(iv);
+      }, 3000);
+    }
+  </script>
 </body>
 </html>
