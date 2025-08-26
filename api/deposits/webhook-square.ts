@@ -2,71 +2,93 @@
 import { readRawBody, crypto } from '../../lib/smm.js';
 import { sb } from '../../lib/db.js';
 
-type AnyObj = Record<string, any>;
-
-// tiny logger that never throws
-async function safeLog(row: { source: string; event?: string; http_status?: number; payload?: any }) {
-  try {
-    await sb.from('webhook_logs').insert({
-      source: row.source || 'app',
-      event: row.event ?? null,
-      http_status: Number.isFinite(row.http_status as number) ? row.http_status : 0,
-      payload: row.payload ?? null,
-    });
-  } catch {/* never block webhooks on logging */}
+// Helper: safest way to pull a value out of lots of possible shapes
+function pick<T = any>(...vals: Array<T | undefined | null>): T | undefined {
+  for (const v of vals) if (v !== undefined && v !== null) return v as T;
+  return undefined;
 }
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
 
-  const DEBUG_NO_VERIFY = process.env.DEBUG_NO_VERIFY === '1';
-
+  let note = '';
   try {
+    // ── 1) Verify signature (unless DEBUG_NO_VERIFY=1)
+    const debugNoVerify = process.env.DEBUG_NO_VERIFY === '1';
+    const headerSig = (req.headers['x-square-hmacsha256'] as string) || '';
+    const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
     const raw = await readRawBody(req);
 
-    // --- Signature verification (can bypass with DEBUG_NO_VERIFY=1) ---
-    if (!DEBUG_NO_VERIFY) {
-      const headerSig = String(req.headers['x-square-hmacsha256'] || '');
-      const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
-      if (!headerSig || !key) { res.statusCode = 400; res.end('missing signature'); return; }
+    if (!debugNoVerify) {
+      if (!headerSig || !key) {
+        res.statusCode = 400; res.end('missing signature'); return;
+      }
       const expected = crypto.createHmac('sha256', key).update(raw).digest('base64');
-      if (headerSig !== expected) { res.statusCode = 400; res.end('bad signature'); return; }
+      if (headerSig !== expected) {
+        // log and bail early
+        await sb.from('webhook_logs').insert({
+          source: 'square',
+          event_type: 'sig_mismatch',
+          status: '400',
+          body: {},
+          note: `headerSig: ${headerSig.slice(0,8)}..., expected: ${expected.slice(0,8)}...`
+        });
+        res.statusCode = 400; res.end('bad signature'); return;
+      }
+    } else {
+      note = 'DEBUG_NO_VERIFY=1';
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event_type: 'debug_no_verify',
+        status: '200',
+        body: {},
+        note
+      });
     }
 
-    // --- Parse body ---
-    const body: AnyObj = JSON.parse(raw.toString('utf8'));
+    // ── 2) Parse JSON body
+    const body = JSON.parse(raw.toString('utf8'));
 
-    const eventType = String(body?.type || body?.event_type || '').toUpperCase();
-    const obj       = body?.data?.object ?? {};
-    const payment   = obj?.payment ?? obj?.object ?? obj?.data?.object?.payment;
+    const type = String(
+      pick(
+        body?.type,
+        body?.event_type
+      ) || ''
+    ).toUpperCase();
 
-    // Payment link id appears in different spots depending on the event
+    const obj = body?.data?.object || body?.data || {};
+
+    // Square sends the payment link id in a few places depending on event:
     const paymentLinkId =
-      payment?.payment_link_id ??
-      obj?.payment_link?.id ??
-      obj?.payment_link_id ??
-      obj?.id ?? '';
+      pick(
+        obj?.payment_link?.id,
+        obj?.payment_link_id,
+        obj?.payment?.payment_link_id,   // <-- YOUR TEST PAYLOAD USED THIS
+        obj?.payment?.link_id,
+        obj?.id
+      ) || '';
 
-    const status = String(payment?.status || '').toUpperCase();
-    const isFailure = status === 'FAILED' || status === 'CANCELED' || status === 'REFUNDED';
-    // Sandbox often fires PAYMENT.UPDATED on success; treat any non-failure PAYMENT.* as paid
-    const looksPaid = eventType.startsWith('PAYMENT') && !isFailure;
+    const paymentStatus = String(
+      pick(
+        obj?.payment?.status,
+        obj?.status
+      ) || ''
+    ).toUpperCase();
 
-    await safeLog({
+    // ── 3) Write a webhook log row (best-effort)
+    await sb.from('webhook_logs').insert({
       source: 'square',
-      event: eventType,
-      http_status: 200,
-      payload: {
-        status,
-        paymentLinkId,
-        keys: Object.keys(obj || {}),
-      }
+      event_type: type,
+      status: 'received',
+      body,
+      note: `plid=${paymentLinkId || '∅'} status=${paymentStatus || '∅'} ${note}`
     });
 
-    if (!looksPaid) { res.statusCode = 200; res.end('ignored'); return; }
-    if (!paymentLinkId) { res.statusCode = 200; res.end('no payment link id'); return; }
+    if (!paymentLinkId) {
+      res.statusCode = 200; res.end('no payment link id'); return;
+    }
 
-    // Find our deposit created by /create-square (provider_id == payment_link.id)
+    // ── 4) Find the matching deposit we created when we made the checkout link
     const { data: dep, error: depErr } = await sb
       .from('deposits')
       .select('*')
@@ -74,44 +96,86 @@ export default async function handler(req: any, res: any) {
       .single();
 
     if (depErr || !dep) {
-      await safeLog({ source: 'square', event: 'NO_DEPOSIT', http_status: 200, payload: { paymentLinkId, depErr: depErr?.message } });
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event_type: type,
+        status: 'no_deposit',
+        body,
+        note: `plid=${paymentLinkId}`
+      });
       res.statusCode = 200; res.end('no deposit'); return;
     }
 
-    if (dep.status === 'paid') { res.statusCode = 200; res.end('already paid'); return; }
+    // ── 5) Decide if this means "paid" or "canceled/failed"
+    const isCompleted =
+      paymentStatus === 'COMPLETED' ||
+      (type.includes('PAYMENT') && type.includes('COMPLETED')) ||
+      (type.includes('ORDER') && type.includes('UPDATED') && paymentStatus === 'COMPLETED');
 
-    // Mark deposit paid
-    const upd = await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
-    if (upd.error) {
-      await safeLog({ source: 'square', event: 'MARK_PAID_FAIL', http_status: 200, payload: { deposit_id: dep.id, err: upd.error.message } });
-      res.statusCode = 200; res.end('mark fail'); return;
+    const isCanceled =
+      paymentStatus === 'CANCELED' || paymentStatus === 'FAILED' ||
+      type.includes('CANCELED') || type.includes('FAILED');
+
+    if (isCompleted) {
+      // Mark row paid (idempotent)
+      await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
+
+      // Credit wallet (prefer RPC if you created it; else fallback to direct update)
+      const delta = Number(dep.amount_cents || 0) || 0;
+
+      // Try RPC first (ignore failure, we’ll fallback)
+      const rpc = await sb.rpc('increment_wallet', { p_user_id: dep.user_id, p_delta_cents: delta }).select().maybeSingle();
+      if ((rpc as any)?.error) {
+        // Fallback direct update
+        const { data: w } = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
+        const next = (w?.balance_cents || 0) + delta;
+        await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
+      }
+
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event_type: type,
+        status: 'paid',
+        body,
+        note: `dep=${dep.id} +${delta}c`
+      });
+
+      res.statusCode = 200; res.end('ok');
+      return;
     }
 
-    // Ensure wallet exists, then credit
-    const { data: w } = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
-    const cur  = Number(w?.balance_cents ?? 0);
-    const next = cur + Number(dep.amount_cents || 0);
-
-    const wUpd = await sb.from('wallets')
-      .update({ balance_cents: next, updated_at: new Date().toISOString() })
-      .eq('user_id', dep.user_id);
-
-    if (wUpd.error) {
-      await safeLog({ source: 'square', event: 'WALLET_UPDATE_FAIL', http_status: 200, payload: { user_id: dep.user_id, err: wUpd.error.message } });
-      res.statusCode = 200; res.end('wallet fail'); return;
+    if (isCanceled) {
+      await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event_type: type,
+        status: 'canceled',
+        body,
+        note: `dep=${dep.id}`
+      });
+      res.statusCode = 200; res.end('ok');
+      return;
     }
 
-    await safeLog({
+    // Unknown / not actionable → ack
+    await sb.from('webhook_logs').insert({
       source: 'square',
-      event: 'WALLET_CREDITED',
-      http_status: 200,
-      payload: { user_id: dep.user_id, amount_cents: dep.amount_cents, payment_link_id: paymentLinkId }
+      event_type: type,
+      status: 'ignored',
+      body,
+      note: `plid=${paymentLinkId} status=${paymentStatus}`
     });
-
-    res.statusCode = 200;
-    res.end('ok');
+    res.statusCode = 200; res.end('ok');
   } catch (e: any) {
-    await safeLog({ source: 'square', event: 'ERROR', http_status: 500, payload: { message: String(e?.message || e) } });
+    try {
+      await sb.from('webhook_logs').insert({
+        source: 'square',
+        event_type: 'exception',
+        status: '500',
+        body: {},
+        note: String(e?.message || e)
+      });
+    } catch { /* ignore */ }
     res.statusCode = 500;
     res.end(String(e?.message || e));
   }
