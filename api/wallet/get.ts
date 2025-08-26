@@ -1,36 +1,21 @@
-// api/wallet/get.ts
-import { sb } from '../../lib/db.js';
-import { getUser } from '../../lib/auth.js';
-import { ensureUserAndWallet } from '../../lib/smm.js';
+// Returns (and ensures) the user's wallet
+
+import { getSb, ensureUserAndWallet } from "../../api/__lib.js";
 
 export default async function handler(req: any, res: any) {
-  const user = getUser(req);
-  if (!user) {
-    res.statusCode = 401;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'no user' }));
-    return;
-  }
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  await ensureUserAndWallet(sb, user);
+  const uid = String(req.headers["x-user-id"] || "");
+  const email = (req.headers["x-user-email"] || "") as string;
+  if (!uid) return res.status(400).json({ error: "missing user id" });
 
-  const { data: w, error } = await sb
-    .from('wallets')
-    .select('balance_cents,currency')
-    .eq('user_id', user.id)
-    .single();
+  const sb = getSb();
+  await ensureUserAndWallet(sb, { id: uid, email });
 
-  if (error) {
-    res.statusCode = 400;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: error.message }));
-    return;
-  }
+  const { data: w } = await sb.from("wallets").select("balance_cents,currency").eq("user_id", uid).single();
 
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({
+  res.status(200).json({
     balance_cents: w?.balance_cents ?? 0,
-    currency: (w?.currency ?? 'usd').toLowerCase(),
-  }));
+    currency: w?.currency ?? "usd",
+  });
 }
