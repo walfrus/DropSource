@@ -7,12 +7,12 @@ type AnyObj = Record<string, any>;
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
 
-  // --- 1) Verify signature (or allow bypass while debugging) -----------------
+  // --- signature (can bypass while debugging) ---
   const debugNoVerify = process.env.DEBUG_NO_VERIFY === '1';
   const headerSig = (req.headers['x-square-hmacsha256'] as string) || '';
   const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
 
-  const raw = await readRawBody(req); // keep raw body for HMAC + logging
+  const raw = await readRawBody(req);
 
   if (!debugNoVerify) {
     if (!headerSig || !key) { res.statusCode = 400; res.end('missing signature'); return; }
@@ -20,54 +20,48 @@ export default async function handler(req: any, res: any) {
     if (headerSig !== expected) { res.statusCode = 400; res.end('bad signature'); return; }
   }
 
-  // --- 2) Parse and lightly normalize ---------------------------------------
+  // --- parse & normalize ---
   let body: AnyObj;
-  try {
-    body = JSON.parse(raw.toString('utf8'));
-  } catch (e: any) {
-    await safeLog({ source: 'square', note: 'bad json', raw: raw.toString('utf8') });
-    res.statusCode = 400; res.end('bad json'); return;
-  }
+  try { body = JSON.parse(raw.toString('utf8')); }
+  catch { await log({ source:'square', note:'bad json', raw: raw.toString('utf8') }); res.statusCode=400; res.end('bad json'); return; }
 
   const eventType = String(body?.type || body?.event_type || '').toUpperCase();
   const obj = body?.data?.object ?? {};
   const payment: AnyObj | undefined =
     obj.payment ?? obj?.object ?? obj?.data?.object?.payment;
 
-  // Square Online Checkout puts the ID here:
+  // try every known home of the link id
   const paymentLinkId =
-    payment?.payment_link_id ??               // <- PRIMARY (Online Checkout)
-    obj?.payment_link?.id ??                  // old guess (keep as fallback)
-    obj?.payment_link_id ??                   // another fallback
-    obj?.id ?? '';                            // very last resort
+    payment?.payment_link_id ??
+    obj?.payment_link?.id ??
+    obj?.payment_link_id ??
+    obj?.id ?? '';
 
-  // Keep a trail for debugging
-  await safeLog({
+  // payment amount if present (square uses integer cents)
+  const paymentAmountCents =
+    Number(payment?.amount_money?.amount ?? payment?.total_money?.amount ?? 0) || null;
+
+  const status = String(payment?.status || '').toUpperCase();
+  const isFailure = status === 'FAILED' || status === 'CANCELED';
+
+  // sandbox often fires PAYMENT.UPDATED; consider anything non-failed as ok
+  const looksPaid =
+    eventType.startsWith('PAYMENT') && !isFailure;
+
+  await log({
     source: 'square',
     note: 'incoming',
     eventType,
+    status,
     paymentLinkId,
-    paymentStatus: payment?.status,
-    snippet: JSON.stringify({ type: body?.type, keys: Object.keys(obj || {}) }).slice(0, 500),
+    paymentAmountCents,
+    sampleKeys: Object.keys(obj || {}),
   });
 
-  // --- 3) We only credit on completed payments --------------------------------
-  const isCompleted =
-    eventType.includes('PAYMENT') &&
-    (String(payment?.status || '').toUpperCase() === 'COMPLETED' ||
-     eventType.includes('COMPLETED') ||
-     eventType.includes('UPDATED')); // Square’s sandbox fires UPDATED on success
+  if (!looksPaid) { res.statusCode = 200; res.end('ignored'); return; }
+  if (!paymentLinkId) { await log({ source:'square', note:'no payment_link_id' }); res.statusCode=200; res.end('no id'); return; }
 
-  if (!isCompleted) {
-    res.statusCode = 200; res.end('ignored'); return;
-  }
-
-  if (!paymentLinkId) {
-    await safeLog({ source: 'square', note: 'no payment_link_id', eventType, payment });
-    res.statusCode = 200; res.end('no payment link id'); return;
-  }
-
-  // --- 4) Find the deposit row created in create-square ----------------------
+  // --- find the deposit we created in create-square ---
   const { data: dep, error: depErr } = await sb
     .from('deposits')
     .select('*')
@@ -75,66 +69,39 @@ export default async function handler(req: any, res: any) {
     .single();
 
   if (depErr || !dep) {
-    await safeLog({
-      source: 'square',
-      note: 'deposit not found for payment_link_id',
-      paymentLinkId,
-      depErr: depErr?.message,
-    });
+    await log({ source:'square', note:'deposit not found', paymentLinkId, depErr: depErr?.message });
     res.statusCode = 200; res.end('no deposit'); return;
   }
 
-  if (dep.status === 'paid') {
-    // idempotent: we already credited
-    res.statusCode = 200; res.end('already paid'); return;
+  if (dep.status === 'paid') { res.statusCode = 200; res.end('already paid'); return; }
+
+  // sanity: if Square gave an amount, ensure it’s >= our deposit
+  if (paymentAmountCents && paymentAmountCents < Number(dep.amount_cents || 0)) {
+    await log({ source:'square', note:'amount smaller than deposit', paymentAmountCents, deposit_amount: dep.amount_cents });
+    // still ignore, don’t credit
+    res.statusCode = 200; res.end('amount mismatch'); return;
   }
 
-  // --- 5) Mark deposit paid, then credit wallet (idempotently) ----------------
-  const upd = await sb.from('deposits')
-    .update({ status: 'paid' })
-    .eq('id', dep.id)
-    .select('*')
-    .single();
+  // mark paid
+  const up = await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
+  if (up.error) { await log({ source:'square', note:'failed mark paid', err: up.error.message }); res.statusCode=200; res.end('mark fail'); return; }
 
-  if (upd.error) {
-    await safeLog({ source: 'square', note: 'failed to mark paid', deposit_id: dep.id, err: upd.error.message });
-    res.statusCode = 200; res.end('failed to mark'); return;
-  }
-
-  // increment wallet
+  // credit wallet
   const w = await sb.from('wallets').select('id,balance_cents').eq('user_id', dep.user_id).single();
-  const current = Number(w.data?.balance_cents || 0);
-  const next = current + Number(dep.amount_cents || 0);
+  const cur = Number(w.data?.balance_cents || 0);
+  const next = cur + Number(dep.amount_cents || 0);
 
-  const wUpd = await sb.from('wallets')
+  const wup = await sb.from('wallets')
     .update({ balance_cents: next, updated_at: new Date().toISOString() })
     .eq('user_id', dep.user_id);
 
-  if (wUpd.error) {
-    await safeLog({ source: 'square', note: 'wallet update failed', deposit_id: dep.id, err: wUpd.error.message });
-    res.statusCode = 200; res.end('wallet failed'); return;
-  }
+  if (wup.error) { await log({ source:'square', note:'wallet update failed', err: wup.error.message }); res.statusCode=200; res.end('wallet fail'); return; }
 
-  await safeLog({
-    source: 'square',
-    note: 'wallet credited',
-    user_id: dep.user_id,
-    amount_cents: dep.amount_cents,
-    deposit_id: dep.id,
-    payment_link_id: paymentLinkId,
-  });
-
-  res.statusCode = 200;
-  res.end('ok');
+  await log({ source:'square', note:'wallet credited', user_id: dep.user_id, amount_cents: dep.amount_cents, payment_link_id: paymentLinkId });
+  res.statusCode = 200; res.end('ok');
 }
 
-// minimal, never throws
-async function safeLog(row: AnyObj) {
-  try {
-    await sb.from('webhook_logs').insert({
-      source: String(row.source || 'square'),
-      event_type: String(row.eventType || row.note || ''),
-      payload: row,
-    });
-  } catch {}
+async function log(row: AnyObj) {
+  try { await sb.from('webhook_logs').insert({ source: String(row.source||'square'), event_type: String(row.note||''), payload: row }); }
+  catch {}
 }
