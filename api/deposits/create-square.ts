@@ -1,70 +1,164 @@
-// /api/deposits/webhook-square.ts
-import { readRawBody, crypto } from '../../lib/smm.js';
+// /api/deposits/create-square.ts
+
+import { readJsonBody, ensureUserAndWallet } from '../../lib/smm.js';
+import { getUser } from '../../lib/auth.js';
 import { sb } from '../../lib/db.js';
 
+/**
+ * Creates a Square Online Checkout payment link and records a pending deposit.
+ * Expects JSON body: { amount_cents: number }  // min 100 (=$1.00)
+ *
+ * Env required:
+ *   - SQUARE_ENV = 'sandbox' | 'production'
+ *   - SQUARE_ACCESS_TOKEN
+ *   - SQUARE_LOCATION_ID
+ *   - PUBLIC_URL (e.g. https://drop-source.vercel.app)
+ */
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') { 
-    res.statusCode = 405; 
-    res.end(); 
-    return; 
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'POST');
+    res.end();
+    return;
+  }
+
+  // Identify the user from your header-based auth helper
+  const user = getUser(req);
+  if (!user) {
+    res.statusCode = 401;
+    res.end(JSON.stringify({ error: 'no user' }));
+    return;
   }
 
   try {
-    const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
-    const raw = await readRawBody(req);
-
-    // 🔹 Skip signature check for now while debugging
-    let verified = false;
-    try {
-      const headerSig = (req.headers['x-square-hmacsha256'] as string) || '';
-      const expected = crypto.createHmac('sha256', key).update(raw).digest('base64');
-      verified = headerSig === expected;
-    } catch {
-      verified = false;
+    // Parse and validate input
+    const body = await readJsonBody(req);
+    const cents = Number(body?.amount_cents || 0);
+    if (!Number.isFinite(cents) || cents < 100) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: 'min $1.00' }));
+      return;
     }
 
-    const body = JSON.parse(raw.toString('utf8'));
-    const eventType = String(body?.type || body?.event_type || '').toUpperCase();
-    const obj = body?.data?.object || {};
-    const plinkId = obj?.payment_link?.id || obj?.payment_link_id || obj?.id || '';
+    // Make sure user + wallet rows exist
+    await ensureUserAndWallet(sb, user);
 
-    // 🔹 Log everything to Supabase for debugging
-    await sb.from('webhook_logs').insert({
-      provider: 'square',
-      event_type: eventType,
-      provider_id: plinkId,
-      payload: body,
-      verified,
-      created_at: new Date().toISOString(),
+    // Create a pending deposit row first
+    const { data: dep, error: depErr } = await sb
+      .from('deposits')
+      .insert({
+        user_id: user.id,
+        method: 'square',
+        amount_cents: cents,
+        status: 'pending',
+      })
+      .select('*')
+      .single();
+
+    if (depErr) throw depErr;
+
+    // Square config
+    const base =
+      (process.env.SQUARE_ENV || '').toLowerCase() === 'sandbox'
+        ? 'https://connect.squareupsandbox.com'
+        : 'https://connect.squareup.com';
+
+    const token = process.env.SQUARE_ACCESS_TOKEN || '';
+    const locationId = process.env.SQUARE_LOCATION_ID || '';
+    const publicUrl = process.env.PUBLIC_URL || '';
+
+    if (!token || !locationId || !publicUrl) {
+      res.statusCode = 500;
+      res.end(
+        JSON.stringify({
+          error: 'missing Square env vars',
+          missing: {
+            SQUARE_ACCESS_TOKEN: !!token,
+            SQUARE_LOCATION_ID: !!locationId,
+            PUBLIC_URL: !!publicUrl,
+          },
+        })
+      );
+      return;
+    }
+
+    // After payment, send the buyer back to a status page
+    const redirect = `${publicUrl}/balance.html?ok=1&uid=${encodeURIComponent(
+      user.id
+    )}&email=${encodeURIComponent(user.email || '')}`;
+
+    // Create the Square Online Checkout payment link
+    const sqRes = await fetch(`${base}/v2/online-checkout/payment-links`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Square-Version': '2024-06-20',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        idempotency_key: `dep_${dep.id}_${Date.now()}`,
+        quick_pay: {
+          name: 'DropSource Credits',
+          price_money: { amount: cents, currency: 'USD' },
+          location_id: locationId,
+        },
+        checkout_options: {
+          ask_for_shipping_address: false,
+          redirect_url: redirect,
+        },
+      }),
     });
 
-    if (!plinkId) {
-      res.statusCode = 200;
-      res.end('no payment link id');
+    const json: any = await sqRes.json().catch(() => ({}));
+
+    if (!sqRes.ok) {
+      res.statusCode = 400;
+      res.end(
+        JSON.stringify({
+          error: json?.errors?.[0]?.detail || 'square failed',
+          raw: json,
+        })
+      );
       return;
     }
 
-    const { data: dep } = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
-    if (!dep) {
-      res.statusCode = 200;
-      res.end('no deposit found');
+    // Square payloads commonly look like: { payment_link: { id, url, ... } }
+    const paymentLink = json?.payment_link || json?.result?.payment_link;
+    if (!paymentLink?.id || !paymentLink?.url) {
+      res.statusCode = 400;
+      res.end(
+        JSON.stringify({
+          error: 'square response missing payment_link',
+          raw: json,
+        })
+      );
       return;
     }
 
-    if (eventType.includes('PAYMENT') && eventType.includes('COMPLETED')) {
-      await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
+    // Save provider id to your deposit row
+    await sb
+      .from('deposits')
+      .update({ provider_id: paymentLink.id })
+      .eq('id', dep.id);
 
-      const { data: w } = await sb.from('wallets').select('id,balance_cents').eq('user_id', dep.user_id).single();
-      const next = (w?.balance_cents || 0) + Number(dep.amount_cents || 0);
-      await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
-    } else if (eventType.includes('CANCELED') || eventType.includes('FAILED')) {
-      await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
-    }
-
-    res.statusCode = 200;
-    res.end('ok');
+    // Return link to the client
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        url: paymentLink.url,
+        deposit_id: dep.id,
+        payment_link_id: paymentLink.id,
+        amount_cents: cents,
+        method: 'square',
+        env: (process.env.SQUARE_ENV || 'production').toLowerCase(),
+      })
+    );
   } catch (e: any) {
     res.statusCode = 500;
-    res.end(String(e?.message || e));
+    res.end(
+      JSON.stringify({
+        error: String(e?.message || e),
+      })
+    );
   }
 }
