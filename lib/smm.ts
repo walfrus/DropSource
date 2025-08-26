@@ -1,5 +1,6 @@
 // lib/smm.ts
 import * as crypto from 'crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export async function callPanel(
   action: string,
@@ -47,11 +48,26 @@ export function mapService(s: any) {
   };
 }
 
-export async function ensureUserAndWallet(sb: any, user: { id: string; email?: string | null }) {
-  await sb.from('users').upsert({ id: user.id, email: user.email ?? null }).select('id').single();
-  const { data: rows } = await sb.from('wallets').select('id').eq('user_id', user.id).limit(1);
-  if (!rows || rows.length === 0) {
-    await sb.from('wallets').insert({ user_id: user.id, balance_cents: 0, currency: 'usd' });
+export async function ensureUserAndWallet(
+  sb: SupabaseClient,
+  user: { id: string; email?: string | null }
+) {
+  // make sure there's a users row (safe if you don't actually read it)
+  await sb.from('users').upsert(
+    { id: user.id, email: user.email ?? null },
+    { onConflict: 'id' }
+  );
+
+  // ensure wallet without throwing if it already exists
+  const now = new Date().toISOString();
+  const { error } = await sb.from('wallets').upsert(
+    { user_id: user.id, balance_cents: 0, currency: 'usd', updated_at: now },
+    { onConflict: 'user_id', ignoreDuplicates: true }
+  );
+
+  // if Supabase ever returns a PG unique violation explicitly, ignore it
+  if (error && error.code !== '23505') {
+    throw error;
   }
 }
 
