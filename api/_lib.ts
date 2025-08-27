@@ -122,28 +122,15 @@ export function mapService(s: any) {
 export async function ensureUserAndWallet(sb: any, user: { id: string; email?: string | null }) {
   // upsert user (idempotent)
   await sb.from('users')
-    .upsert({ id: user.id, email: user.email ?? null })
+    .upsert({ id: user.id, email: user.email ?? null }, { onConflict: 'id' })
     .select('id')
     .single();
 
-  // ensure wallet exists
-  const q = await sb.from('wallets')
+  // upsert wallet on unique user_id to avoid 409s
+  await sb.from('wallets')
+    .upsert({ user_id: user.id, balance_cents: 0, currency: 'usd' }, { onConflict: 'user_id' })
     .select('id')
-    .eq('user_id', user.id)
-    .limit(1);
-
-  const rows = (q as any)?.data as any[] | null;
-  if (!rows || rows.length === 0) {
-    try {
-      await sb.from('wallets').insert({
-        user_id: user.id,
-        balance_cents: 0,
-        currency: 'usd'
-      });
-    } catch {
-      // ignore conflict/duplicate insert races (409)
-    }
-  }
+    .single();
 }
 
 // --- RAW BODY HELPERS (for webhooks) ---------------------------------------

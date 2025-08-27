@@ -155,7 +155,7 @@ export default async function handler(req: any, res: any) {
 
     // Find a pending deposit by any identifier Square gives us
     const orConds: string[] = [];
-    if (orderId)  orConds.push(`provider_order_id.eq.${orderId}`);
+    // Removed the orderId condition as per instructions
     if (plinkId)  orConds.push(`provider_id.eq.${plinkId}`);
     if (payId)    orConds.push(`provider_id.eq.${payId}`);
 
@@ -169,7 +169,7 @@ export default async function handler(req: any, res: any) {
 
     let q = sb
       .from('deposits')
-      .select('id,user_id,status,amount_cents,provider_id,provider_order_id')
+      .select('id,user_id,status,amount_cents,provider_id')
       .or(orConds.join(','))
       .order('created_at', { ascending: false })
       .limit(1);
@@ -210,7 +210,7 @@ export default async function handler(req: any, res: any) {
     if (completed) {
       const updateFields: AnyObj = { status: 'paid' };
       if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
-      if (!dep.provider_order_id && orderId) updateFields.provider_order_id = orderId;
+      // Removed the provider_order_id assignment as per instructions
 
       const upd = await sb
         .from('deposits')

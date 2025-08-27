@@ -148,10 +148,24 @@ export default async function handler(req: any, res: any) {
       } catch {}
     }
 
-    await sb.from('deposits').update({
-      provider_id: paymentLink?.id || null,
-      provider_order_id: orderId || null
+    const updDep = await sb.from('deposits').update({
+      provider_id: paymentLink?.id || null
     }).eq('id', dep.id);
+
+    if ((updDep as any)?.error) {
+      try {
+        await sb.from('webhook_logs').insert({
+          source: 'square',
+          event: 'create_update_deposit_failed',
+          http_status: 200,
+          payload: {
+            depositId: dep.id,
+            provider_id: paymentLink?.id || null,
+            err: (updDep as any).error.message
+          }
+        });
+      } catch {}
+    }
 
     try {
       await sb.from('webhook_logs').insert({

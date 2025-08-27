@@ -76,6 +76,9 @@ export function mapService(s: any) {
     min: Number(s.min ?? s.min_order ?? 0),
     max: Number(s.max ?? s.max_order ?? 0),
     type: String(s.type ?? 'Default'),
+    dripfeed: toBool(s.dripfeed ?? s.drip ?? false),
+    refill: toBool(s.refill ?? s.refill_time ?? false),
+    cancel: toBool(s.cancel ?? false),
     flags: {
       dripfeed: toBool(s.dripfeed ?? s.drip ?? false),
       refill: toBool(s.refill ?? s.refill_time ?? false),
