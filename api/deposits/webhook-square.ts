@@ -4,6 +4,12 @@ import { sb } from '../../lib/db.js';
 
 type AnyObj = Record<string, any>;
 
+// statuses we consider terminal/success in our app
+const FINAL_STATUSES = ['completed', 'paid', 'succeeded', 'success', 'ok', 'done'];
+// candidates we will try to write into deposits.status, left-to-right
+const SUCCESS_CANDIDATES: string[] = (process.env.DEPOSIT_SUCCESS_STATUS || 'completed,paid,succeeded,success,ok,done')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
 function noStore(res: any) {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -196,46 +202,67 @@ export default async function handler(req: any, res: any) {
     }
 
     const depStatus = String(dep.status).toLowerCase();
-    if (depStatus === 'completed' || depStatus === 'paid') {
+    if (FINAL_STATUSES.includes(depStatus)) {
       await safeLog('already_paid', { deposit_id: dep.id, plinkId, depStatus }, 200);
       res.statusCode = 200; noStore(res); res.end('already');
       return;
     }
 
     // decide terminal states – rely on payment.status only
-    const completed = status === 'COMPLETED' || status === 'APPROVED' || status === 'CAPTURED';
-    const canceledOrFailed = status === 'CANCELED' || status === 'FAILED' || status === 'DECLINED';
+    const completed = ['COMPLETED','APPROVED','CAPTURED','SUCCESS','SUCCEEDED'].includes(String(status || '').toUpperCase());
+    const canceledOrFailed = ['CANCELED','FAILED','DECLINED','CANCELLED'].includes(String(status || '').toUpperCase());
 
     if (completed) {
-      const updateFields: AnyObj = { status: 'completed' };
-      if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
-      // Removed the provider_order_id assignment as per instructions
+      // try writing a success status that passes the DB CHECK constraint
+      let lastErr: any = null;
+      let wrote = false;
+      let usedStatus: string | null = null;
 
-      await safeLog('before_update', { deposit_id: dep.id, updateFields, dep_status: dep.status, provider_id: dep.provider_id }, 200);
+      for (const candidate of SUCCESS_CANDIDATES) {
+        const updateFields: AnyObj = { status: candidate };
+        if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
 
-      // Some Supabase setups may not return representation even with select chaining.
-      // Do a plain update, then verify with a separate SELECT.
-      const upd = await sb
-        .from('deposits')
-        .update(updateFields)
-        .eq('id', dep.id);
+        await safeLog('before_update', { deposit_id: dep.id, updateFields, dep_status: dep.status, provider_id: dep.provider_id }, 200);
 
-      if ((upd as any)?.error) {
-        const errMsg = (upd as any)?.error?.message || 'update error';
+        const upd = await sb
+          .from('deposits')
+          .update(updateFields)
+          .eq('id', dep.id);
+
+        if ((upd as any)?.error) {
+          lastErr = (upd as any).error;
+          await safeLog('update_status_failed', { deposit_id: dep.id, tried: candidate, err: lastErr?.message }, 200);
+          continue; // try next candidate
+        }
+
+        // verify read-back
+        const chk = await sb
+          .from('deposits')
+          .select('status,provider_id')
+          .eq('id', dep.id)
+          .single();
+        if (!(chk as any)?.error && FINAL_STATUSES.includes(String((chk as any).data?.status || '').toLowerCase())) {
+          wrote = true; usedStatus = candidate; break;
+        }
+
+        await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got: (chk as any)?.data?.status }, 200);
+      }
+
+      if (!wrote) {
+        const errMsg = lastErr?.message || 'update error (all candidates failed)';
         try {
           await safeLog('mark_paid_failed', {
             deposit_id: dep.id,
             was_status: dep.status,
-            tried: updateFields,
-            match_hint: { provider_id: dep.provider_id, payId, plinkId },
-            raw_upd: upd,
-            err: errMsg
+            candidates: SUCCESS_CANDIDATES,
+            lastErr: lastErr || null,
+            match_hint: { provider_id: dep.provider_id, payId, plinkId }
           }, 200);
         } catch {}
         if (dbgReturnErr) {
           res.statusCode = 200; noStore(res);
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ debug: 'mark_paid_failed', err: errMsg, upd, updateFields, dep: { id: dep.id, status: dep.status, provider_id: dep.provider_id } }));
+          res.end(JSON.stringify({ debug: 'mark_paid_failed', err: errMsg, candidates: SUCCESS_CANDIDATES, dep: { id: dep.id, status: dep.status, provider_id: dep.provider_id } }));
           return;
         }
         res.statusCode = 200; noStore(res); res.end('mark fail');
@@ -250,7 +277,7 @@ export default async function handler(req: any, res: any) {
         .single();
       if ((chk as any)?.error) {
         try { await safeLog('post_update_fetch_failed', { deposit_id: dep.id, err: (chk as any)?.error?.message }, 200); } catch {}
-      } else if ((chk as any)?.data?.status && (chk as any).data.status !== 'completed') {
+      } else if ((chk as any)?.data?.status && !FINAL_STATUSES.includes(String((chk as any).data.status || '').toLowerCase())) {
         try { await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got: (chk as any).data.status }, 200); } catch {}
       }
 
