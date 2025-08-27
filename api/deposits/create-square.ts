@@ -124,9 +124,33 @@ export default async function handler(req: any, res: any) {
     }
 
     const paymentLink = json?.payment_link;
+
+    // Ensure we have an order_id (some sandbox responses omit it on create)
+    let orderId: string | null = paymentLink?.order_id || null;
+    if (!orderId && paymentLink?.id) {
+      try {
+        const r2 = await fetch(`${BASE}/v2/online-checkout/payment-links/${paymentLink.id}`, {
+          method: 'GET',
+          headers: {
+            'Square-Version': '2024-06-20',
+            'Authorization': `Bearer ${ACCESS_TOKEN}`
+          }
+        });
+        const j2: any = await r2.json().catch(() => ({}));
+        const pl2 = j2?.payment_link;
+        if (pl2?.order_id) {
+          orderId = pl2.order_id;
+        }
+        // backfill url if not present
+        if (!paymentLink?.url && pl2?.url) {
+          (paymentLink as any).url = pl2.url;
+        }
+      } catch {}
+    }
+
     await sb.from('deposits').update({
       provider_id: paymentLink?.id || null,
-      provider_order_id: paymentLink?.order_id || null,
+      provider_order_id: orderId || null,
       provider_payload: json
     }).eq('id', dep.id);
 
@@ -138,7 +162,7 @@ export default async function handler(req: any, res: any) {
         payload: {
           depositId: dep.id,
           provider_id: paymentLink?.id,
-          order_id: paymentLink?.order_id,
+          order_id: orderId,
           url: paymentLink?.url,
           amount_cents
         },
@@ -149,7 +173,7 @@ export default async function handler(req: any, res: any) {
       url: paymentLink?.url,
       deposit_id: dep.id,
       payment_link_id: paymentLink?.id,
-      order_id: paymentLink?.order_id,
+      order_id: orderId,
       amount_cents,
       method: 'square',
       env: isProd ? 'production' : 'sandbox',
