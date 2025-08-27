@@ -208,19 +208,29 @@ export default async function handler(req: any, res: any) {
     const canceledOrFailed = status === 'CANCELED' || status === 'FAILED' || status === 'DECLINED';
 
     if (completed) {
-      // mark paid + store payload
-      const upd = await sb.from('deposits').update({
-        status: 'paid',
-        // backfill identifiers if the row didn't have them yet
-        provider_id: dep.provider_id ?? (payId || plinkId) ?? dep.provider_id,
-        provider_order_id: dep.provider_order_id ?? orderId ?? dep.provider_order_id,
-      }).eq('id', dep.id);
+      // mark paid first, minimal mutation to avoid schema/constraint issues
+      const upd = await sb
+        .from('deposits')
+        .update({ status: 'paid' })
+        .eq('id', dep.id);
 
       if (upd.error) {
-        await safeLog('mark_paid_failed', { deposit_id: dep.id, err: upd.error.message }, 200);
+        await safeLog('mark_paid_failed', { deposit_id: dep.id, code: upd.error.code, msg: upd.error.message }, 200);
         res.statusCode = 200; noStore(res); res.end('mark fail');
         return;
       }
+
+      // best-effort backfill identifiers in separate, ignorable calls
+      try {
+        if (!dep.provider_id && (payId || plinkId)) {
+          await sb.from('deposits').update({ provider_id: payId || plinkId }).eq('id', dep.id);
+        }
+      } catch {}
+      try {
+        if (!dep.provider_order_id && orderId) {
+          await sb.from('deposits').update({ provider_order_id: orderId }).eq('id', dep.id);
+        }
+      } catch {}
 
       // ensure wallet exists (handle "no rows" explicitly)
       let current = 0;
