@@ -152,6 +152,7 @@ export default async function handler(req: any, res: any) {
     const plinkId = extractPaymentLinkId(body);
     const orderId = extractOrderId(body);
     const payId = extractPaymentId(body);
+    const dbgReturnErr = String(req.headers['x-debug-return-error'] || '') === '1';
 
     // Resolve identifiers from payload
     const ids: string[] = [plinkId, payId].filter((s): s is string => !!s);
@@ -210,6 +211,8 @@ export default async function handler(req: any, res: any) {
       if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
       // Removed the provider_order_id assignment as per instructions
 
+      await safeLog('before_update', { deposit_id: dep.id, updateFields, dep_status: dep.status, provider_id: dep.provider_id }, 200);
+
       // Some Supabase setups may not return representation even with select chaining.
       // Do a plain update, then verify with a separate SELECT.
       const upd = await sb
@@ -218,15 +221,23 @@ export default async function handler(req: any, res: any) {
         .eq('id', dep.id);
 
       if ((upd as any)?.error) {
+        const errMsg = (upd as any)?.error?.message || 'update error';
         try {
           await safeLog('mark_paid_failed', {
             deposit_id: dep.id,
             was_status: dep.status,
             tried: updateFields,
             match_hint: { provider_id: dep.provider_id, payId, plinkId },
-            err: (upd as any)?.error?.message || 'update error'
+            raw_upd: upd,
+            err: errMsg
           }, 200);
         } catch {}
+        if (dbgReturnErr) {
+          res.statusCode = 200; noStore(res);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ debug: 'mark_paid_failed', err: errMsg, upd, updateFields, dep: { id: dep.id, status: dep.status, provider_id: dep.provider_id } }));
+          return;
+        }
         res.statusCode = 200; noStore(res); res.end('mark fail');
         return;
       }
