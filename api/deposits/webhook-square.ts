@@ -153,36 +153,34 @@ export default async function handler(req: any, res: any) {
     const orderId = extractOrderId(body);
     const payId = extractPaymentId(body);
 
-    // Find a pending deposit by any identifier Square gives us
-    const orConds: string[] = [];
-    // Removed the orderId condition as per instructions
-    if (plinkId)  orConds.push(`provider_id.eq.${plinkId}`);
-    if (payId)    orConds.push(`provider_id.eq.${payId}`);
+    // Resolve identifiers from payload
+    const ids: string[] = [plinkId, payId].filter((s): s is string => !!s);
 
-    if (!orConds.length) {
+    if (!ids.length) {
       await safeLog('no_ids_to_match', { orderId, plinkId, payId }, 200);
       res.statusCode = 200; noStore(res); res.end('ok');
       return;
     }
 
+    // Strictly look for a single PENDING Square deposit by provider_id (link or payment)
     const restrictStatus = String(req.headers['x-debug-no-status'] || '') !== '1';
 
-    let q = sb
+    let depSel = sb
       .from('deposits')
       .select('id,user_id,status,amount_cents,provider_id')
-      .or(orConds.join(','))
+      .eq('method', 'square')
+      .in('provider_id', ids)
       .order('created_at', { ascending: false })
       .limit(1);
 
     if (restrictStatus) {
       // normal mode — only pick pending rows
-      // (during sandbox/manual tests you can send x-debug-no-status: 1 to ignore this)
       // @ts-ignore
-      q = q.eq('status', 'pending');
+      depSel = depSel.eq('status', 'pending');
     }
 
     // @ts-ignore
-    const { data: dep, error: findErr } = await q.maybeSingle();
+    const { data: dep, error: findErr } = await depSel.maybeSingle();
 
     if (findErr) {
       await safeLog('find_error', { msg: findErr.message, orderId, plinkId, payId }, 200);
@@ -215,15 +213,22 @@ export default async function handler(req: any, res: any) {
       const upd = await sb
         .from('deposits')
         .update(updateFields)
-        .eq('id', dep.id);
+        .eq('id', dep.id)
+        .select('id,status,provider_id')
+        .single();
 
-      if (upd.error) {
-        await safeLog('mark_paid_failed', {
-          deposit_id: dep.id,
-          code: upd.error.code,
-          msg: upd.error.message,
-          tried: updateFields,
-        }, 200);
+      // @ts-ignore
+      if (upd?.error || !upd?.data) {
+        try {
+          await safeLog('mark_paid_failed', {
+            deposit_id: dep.id,
+            was_status: dep.status,
+            tried: updateFields,
+            match_hint: { provider_id: dep.provider_id, payId, plinkId },
+            // @ts-ignore
+            err: upd?.error?.message || 'no row returned'
+          }, 200);
+        } catch {}
         res.statusCode = 200; noStore(res); res.end('mark fail');
         return;
       }
