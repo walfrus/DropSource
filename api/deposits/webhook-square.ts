@@ -195,9 +195,9 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // idempotency: don't double-credit
-    if (String(dep.status).toLowerCase() === 'paid') {
-      await safeLog('already_paid', { deposit_id: dep.id, plinkId }, 200);
+    const depStatus = String(dep.status).toLowerCase();
+    if (depStatus === 'completed' || depStatus === 'paid') {
+      await safeLog('already_paid', { deposit_id: dep.id, plinkId, depStatus }, 200);
       res.statusCode = 200; noStore(res); res.end('already');
       return;
     }
@@ -207,7 +207,7 @@ export default async function handler(req: any, res: any) {
     const canceledOrFailed = status === 'CANCELED' || status === 'FAILED' || status === 'DECLINED';
 
     if (completed) {
-      const updateFields: AnyObj = { status: 'paid' };
+      const updateFields: AnyObj = { status: 'completed' };
       if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
       // Removed the provider_order_id assignment as per instructions
 
@@ -250,7 +250,7 @@ export default async function handler(req: any, res: any) {
         .single();
       if ((chk as any)?.error) {
         try { await safeLog('post_update_fetch_failed', { deposit_id: dep.id, err: (chk as any)?.error?.message }, 200); } catch {}
-      } else if ((chk as any)?.data?.status && (chk as any).data.status !== 'paid') {
+      } else if ((chk as any)?.data?.status && (chk as any).data.status !== 'completed') {
         try { await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got: (chk as any).data.status }, 200); } catch {}
       }
 
