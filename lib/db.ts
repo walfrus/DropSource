@@ -18,10 +18,10 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
 
 // Reuse a single instance across hot reloads (dev) / Lambda cold starts (prod)
 // @ts-ignore
-const globalAny = global as any;
+const globalAny = globalThis as any;
 export const sb =
   globalAny.__SB_SERVER__ ||
   (globalAny.__SB_SERVER__ = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { headers: { 'X-Client-Info': 'dropsource-server' } },
   }));

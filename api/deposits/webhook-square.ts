@@ -153,21 +153,35 @@ export default async function handler(req: any, res: any) {
     const orderId = extractOrderId(body);
     const payId = extractPaymentId(body);
 
-    let dep: any = null;
-    if (orderId) {
-      const byOrder = await sb.from('deposits').select('*').eq('provider_order_id', orderId).single();
-      dep = byOrder.data as any;
+    // Find a pending deposit by any identifier Square gives us
+    const orConds: string[] = [];
+    if (orderId)  orConds.push(`provider_order_id.eq.${orderId}`);
+    if (plinkId)  orConds.push(`provider_id.eq.${plinkId}`);
+    if (payId)    orConds.push(`provider_id.eq.${payId}`);
+
+    if (!orConds.length) {
+      await safeLog('no_ids_to_match', { orderId, plinkId, payId }, 200);
+      res.statusCode = 200; noStore(res); res.end('ok');
+      return;
     }
-    if (!dep && plinkId) {
-      const byLink = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
-      dep = byLink.data as any;
+
+    const { data: dep, error: findErr } = await sb
+      .from('deposits')
+      .select('id,user_id,status,amount_cents,provider_id,provider_order_id')
+      .eq('status', 'pending')
+      .or(orConds.join(','))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findErr) {
+      await safeLog('find_error', { msg: findErr.message, orderId, plinkId, payId }, 200);
+      res.statusCode = 200; noStore(res); res.end('ok');
+      return;
     }
-    if (!dep && payId) {
-      const byPay = await sb.from('deposits').select('*').eq('provider_id', payId).single();
-      dep = byPay.data as any;
-    }
+
     if (!dep) {
-      await safeLog('deposit_not_found', { orderId, plinkId, type, status }, 200);
+      await safeLog('deposit_not_found', { orderId, plinkId, payId, type, status }, 200);
       res.statusCode = 200; noStore(res); res.end('ok');
       return;
     }
@@ -188,10 +202,11 @@ export default async function handler(req: any, res: any) {
       // mark paid + store payload
       const upd = await sb.from('deposits').update({
         status: 'paid',
-        provider_payment_id: payId || dep.provider_payment_id || null,
-        provider_order_id: dep.provider_order_id || orderId || null,
-        provider_payload: body
+        // backfill identifiers if the row didn't have them yet
+        provider_id: dep.provider_id ?? (payId || plinkId) ?? dep.provider_id,
+        provider_order_id: dep.provider_order_id ?? orderId ?? dep.provider_order_id,
       }).eq('id', dep.id);
+
       if (upd.error) {
         await safeLog('mark_paid_failed', { deposit_id: dep.id, err: upd.error.message }, 200);
         res.statusCode = 200; noStore(res); res.end('mark fail');
@@ -229,7 +244,6 @@ export default async function handler(req: any, res: any) {
       await safeLog('marked_canceled', { deposit_id: dep.id, plinkId, status, type }, 200);
     } else {
       // non-terminal — stash payload so we can inspect later
-      try { await sb.from('deposits').update({ provider_payload: body }).eq('id', dep.id); } catch {}
       await safeLog('ignored_event', { type, status, plinkId, orderId }, 200);
     }
 
