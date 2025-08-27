@@ -210,27 +210,37 @@ export default async function handler(req: any, res: any) {
       if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
       // Removed the provider_order_id assignment as per instructions
 
+      // Some Supabase setups may not return representation even with select chaining.
+      // Do a plain update, then verify with a separate SELECT.
       const upd = await sb
         .from('deposits')
         .update(updateFields)
-        .eq('id', dep.id)
-        .select('id,status,provider_id')
-        .single();
+        .eq('id', dep.id);
 
-      // @ts-ignore
-      if (upd?.error || !upd?.data) {
+      if ((upd as any)?.error) {
         try {
           await safeLog('mark_paid_failed', {
             deposit_id: dep.id,
             was_status: dep.status,
             tried: updateFields,
             match_hint: { provider_id: dep.provider_id, payId, plinkId },
-            // @ts-ignore
-            err: upd?.error?.message || 'no row returned'
+            err: (upd as any)?.error?.message || 'update error'
           }, 200);
         } catch {}
         res.statusCode = 200; noStore(res); res.end('mark fail');
         return;
+      }
+
+      // Verify post-update status (best-effort; do not fail hard if mismatch)
+      const chk = await sb
+        .from('deposits')
+        .select('status,provider_id')
+        .eq('id', dep.id)
+        .single();
+      if ((chk as any)?.error) {
+        try { await safeLog('post_update_fetch_failed', { deposit_id: dep.id, err: (chk as any)?.error?.message }, 200); } catch {}
+      } else if ((chk as any)?.data?.status && (chk as any).data.status !== 'paid') {
+        try { await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got: (chk as any).data.status }, 200); } catch {}
       }
 
       // ensure wallet exists (handle "no rows" explicitly)
