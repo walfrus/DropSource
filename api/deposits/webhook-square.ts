@@ -56,16 +56,33 @@ function extractOrderId(body: any): string | null {
 }
 
 function extractPaymentStatus(body: any): string | null {
-  const status =
-    body?.data?.object?.payment?.status ??
-    body?.data?.object?.status ??
-    body?.data?.object?.payment_link?.status ??
-    null;
-  return typeof status === 'string' ? status.toUpperCase() : null;
+  const cands: Array<any> = [
+    body?.status,                                 // flattened summary you log
+    body?.payment?.status,                        // flattened under payment
+    body?.data?.object?.payment?.status,          // Square nested
+    body?.data?.object?.status,                   // sometimes present
+    body?.data?.object?.payment_link?.status,     // edge cases
+  ];
+  for (const s of cands) {
+    if (typeof s === 'string' && s.trim()) return s.trim().toUpperCase();
+  }
+  return null;
 }
 
 function extractEventType(body: any): string {
   return String(body?.type || body?.event_type || '').toUpperCase();
+}
+
+function extractPaymentId(body: any): string | null {
+  const d = body?.data;
+  const obj = d?.object ?? d?.data ?? body?.object ?? {};
+  const candidates: Array<any> = [
+    obj?.payment?.id,
+    obj?.id,
+    body?.data?.object?.payment?.id,
+  ];
+  for (const c of candidates) if (typeof c === 'string' && c.trim()) return c.trim();
+  return null;
 }
 
 export default async function handler(req: any, res: any) {
@@ -122,12 +139,19 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    await safeLog('incoming', { type: body?.type, sample: body?.data?.id || null, orderId: extractOrderId(body), paymentLinkId: extractPaymentLinkId(body) }, 200);
+    await safeLog('incoming', {
+      type: body?.type,
+      sample: body?.data?.id || null,
+      orderId: extractOrderId(body),
+      paymentLinkId: extractPaymentLinkId(body),
+      paymentId: extractPaymentId(body)
+    }, 200);
 
     const type = extractEventType(body);
     const status = extractPaymentStatus(body);
     const plinkId = extractPaymentLinkId(body);
     const orderId = extractOrderId(body);
+    const payId = extractPaymentId(body);
 
     let dep: any = null;
     if (orderId) {
@@ -137,6 +161,10 @@ export default async function handler(req: any, res: any) {
     if (!dep && plinkId) {
       const byLink = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
       dep = byLink.data as any;
+    }
+    if (!dep && payId) {
+      const byPay = await sb.from('deposits').select('*').eq('provider_id', payId).single();
+      dep = byPay.data as any;
     }
     if (!dep) {
       await safeLog('deposit_not_found', { orderId, plinkId, type, status }, 200);
@@ -158,19 +186,34 @@ export default async function handler(req: any, res: any) {
 
     if (completed) {
       // mark paid + store payload
-      const upd = await sb.from('deposits').update({ status: 'paid', provider_payload: body }).eq('id', dep.id);
+      const upd = await sb.from('deposits').update({
+        status: 'paid',
+        provider_payment_id: payId || dep.provider_payment_id || null,
+        provider_order_id: dep.provider_order_id || orderId || null,
+        provider_payload: body
+      }).eq('id', dep.id);
       if (upd.error) {
         await safeLog('mark_paid_failed', { deposit_id: dep.id, err: upd.error.message }, 200);
         res.statusCode = 200; noStore(res); res.end('mark fail');
         return;
       }
 
-      // ensure wallet exists
-      const wSel = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).maybeSingle?.() ?? await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
-      if (!('data' in wSel) || !wSel.data) {
+      // ensure wallet exists (handle "no rows" explicitly)
+      let current = 0;
+      const wSel = await sb.from('wallets')
+        .select('balance_cents')
+        .eq('user_id', dep.user_id)
+        .single();
+
+      if (wSel.data) {
+        current = Number(wSel.data.balance_cents ?? 0);
+      } else if (wSel.error && (wSel.error.code === 'PGRST116' || /Results contain 0 rows/i.test(String(wSel.error.message)))) {
+        // no wallet row — create one at zero
         try { await sb.from('wallets').insert({ user_id: dep.user_id, balance_cents: 0, currency: 'usd' }); } catch {}
+      } else if (wSel.error) {
+        await safeLog('wallet_select_failed', { user_id: dep.user_id, err: wSel.error.message }, 200);
       }
-      const current = Number((wSel as any)?.data?.balance_cents ?? 0);
+
       const next = current + Number(dep.amount_cents || 0);
 
       const wUpd = await sb.from('wallets').update({ balance_cents: next, updated_at: new Date().toISOString() }).eq('user_id', dep.user_id);
