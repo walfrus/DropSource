@@ -2,6 +2,8 @@
 import { readRawBody, crypto } from '../../lib/smm.js';
 import { sb } from '../../lib/db.js';
 
+export const config = { runtime: 'nodejs' };
+
 type AnyObj = Record<string, any>;
 
 // statuses we consider terminal/success in our app
@@ -174,7 +176,7 @@ export default async function handler(req: any, res: any) {
 
     let depSel = sb
       .from('deposits')
-      .select('id,user_id,status,amount_cents,provider_id')
+      .select('id,user_id,status,amount_cents,provider_id,created_at')
       .eq('method', 'square')
       .in('provider_id', ids)
       .order('created_at', { ascending: false })
@@ -186,8 +188,19 @@ export default async function handler(req: any, res: any) {
       depSel = depSel.eq('status', 'pending');
     }
 
-    // @ts-ignore
-    const { data: dep, error: findErr } = await depSel.maybeSingle();
+    // compatible with supabase-js v2 (with/without maybeSingle)
+    let depResp: any;
+    try {
+      if (typeof (depSel as any).maybeSingle === 'function') {
+        depResp = await (depSel as any).maybeSingle();
+      } else {
+        depResp = await (depSel as any).single();
+      }
+    } catch (e: any) {
+      depResp = { data: null, error: e };
+    }
+    const dep = (depResp as any)?.data ?? null;
+    const findErr = (depResp as any)?.error ?? null;
 
     if (findErr) {
       await safeLog('find_error', { msg: findErr.message, orderId, plinkId, payId }, 200);
@@ -213,72 +226,109 @@ export default async function handler(req: any, res: any) {
     const canceledOrFailed = ['CANCELED','FAILED','DECLINED','CANCELLED'].includes(String(status || '').toUpperCase());
 
     if (completed) {
-      // try writing a success status that passes the DB CHECK constraint
-      let lastErr: any = null;
-      let wrote = false;
-      let usedStatus: string | null = null;
+      // --- helper: attempt flexible updates to satisfy CHECK constraints ---
+      const isoNow = new Date().toISOString();
 
-      for (const candidate of SUCCESS_CANDIDATES) {
-        const updateFields: AnyObj = { status: candidate };
+      async function tryUpdate(fields: AnyObj, attemptTag: string) {
+        // ensure provider_id is set if we discovered a better one
+        const updateFields: AnyObj = { ...fields };
         if (!dep.provider_id && (payId || plinkId)) updateFields.provider_id = payId || plinkId;
 
-        await safeLog('before_update', { deposit_id: dep.id, updateFields, dep_status: dep.status, provider_id: dep.provider_id }, 200);
+        // attempt up to 5 times, pruning unknown columns
+        for (let i = 0; i < 5; i++) {
+          const upd = await sb.from('deposits').update(updateFields).eq('id', dep.id);
+          if (!(upd as any)?.error) {
+            await safeLog('update_ok', { deposit_id: dep.id, attemptTag, updateFields }, 200);
+            return { ok: true };
+          }
 
-        const upd = await sb
-          .from('deposits')
-          .update(updateFields)
-          .eq('id', dep.id);
+          const errMsg = String((upd as any).error?.message || '');
+          await safeLog('update_failed', { deposit_id: dep.id, attemptTag, updateFields, err: errMsg }, 200);
 
-        if ((upd as any)?.error) {
-          lastErr = (upd as any).error;
-          await safeLog('update_status_failed', { deposit_id: dep.id, tried: candidate, err: lastErr?.message }, 200);
-          continue; // try next candidate
+          // If error is due to unknown column, remove it and retry
+          const m = errMsg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of\s+relation\s+"?deposits"?\s+does\s+not\s+exist/i)
+                 || errMsg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does\s+not\s+exist/i);
+          if (m && updateFields[m[1]] !== undefined) {
+            delete updateFields[m[1]];
+            continue;
+          }
+
+          // If we hit CHECK constraint, bail out so caller can try a different shape
+          if (/check constraint/i.test(errMsg) || /violates check constraint/i.test(errMsg)) {
+            return { ok: false, err: errMsg };
+          }
+
+          // default: give up
+          return { ok: false, err: errMsg };
         }
+        return { ok: false, err: 'max retries' };
+      }
 
-        // verify read-back
-        const chk = await sb
-          .from('deposits')
-          .select('status,provider_id')
-          .eq('id', dep.id)
-          .single();
-        if (!(chk as any)?.error && FINAL_STATUSES.includes(String((chk as any).data?.status || '').toLowerCase())) {
-          wrote = true; usedStatus = candidate; break;
+      // candidates for status from env (already computed as SUCCESS_CANDIDATES)
+      // We’ll try multiple "shapes" to satisfy stricter DB checks some schemas use.
+      const shapes: Array<(s: string) => AnyObj> = [
+        (s) => ({ status: s }),                               // bare status
+        (s) => ({ status: s, paid_at: isoNow }),              // common requirement
+        (s) => ({ status: s, completed_at: isoNow }),         // alt timestamp
+        (s) => ({ status: s, settled_at: isoNow }),           // alt timestamp
+        (s) => ({ status: s, paid: true }),                   // boolean flag
+        (s) => ({ status: s, final_amount_cents: Number(dep.amount_cents || 0) }) // some schemas store final amount
+      ];
+
+      let wrote = false;
+      let usedStatus: string | null = null;
+      let lastErr: string | null = null;
+
+      for (const candidate of SUCCESS_CANDIDATES) {
+        for (let i = 0; i < shapes.length; i++) {
+          const fields = shapes[i](candidate);
+          const tag = `${candidate}#${i}`;
+          const r = await tryUpdate(fields, tag);
+          if (r.ok) {
+            // verify read-back meets FINAL_STATUSES
+            const chk = await sb.from('deposits')
+              .select('status,provider_id')
+              .eq('id', dep.id)
+              .single();
+
+            const got = (chk as any)?.data?.status ? String((chk as any).data.status).toLowerCase() : '';
+            if (!(chk as any)?.error && FINAL_STATUSES.includes(got)) {
+              wrote = true; usedStatus = candidate;
+              break;
+            } else {
+              await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got }, 200);
+            }
+          } else {
+            lastErr = r.err || lastErr;
+            // if we hit a CHECK constraint, try next candidate/shape
+            if (r.err && /check constraint/i.test(r.err)) continue;
+          }
         }
-
-        await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got: (chk as any)?.data?.status }, 200);
+        if (wrote) break;
       }
 
       if (!wrote) {
-        const errMsg = lastErr?.message || 'update error (all candidates failed)';
-        try {
-          await safeLog('mark_paid_failed', {
-            deposit_id: dep.id,
-            was_status: dep.status,
-            candidates: SUCCESS_CANDIDATES,
-            lastErr: lastErr || null,
-            match_hint: { provider_id: dep.provider_id, payId, plinkId }
-          }, 200);
-        } catch {}
+        await safeLog('mark_paid_failed', {
+          deposit_id: dep.id,
+          was_status: dep.status,
+          candidatesTried: SUCCESS_CANDIDATES,
+          lastErr,
+          payload_hint: { plinkId, payId, status, type }
+        }, 200);
+
         if (dbgReturnErr) {
           res.statusCode = 200; noStore(res);
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ debug: 'mark_paid_failed', err: errMsg, candidates: SUCCESS_CANDIDATES, dep: { id: dep.id, status: dep.status, provider_id: dep.provider_id } }));
+          res.end(JSON.stringify({
+            debug: 'mark_paid_failed',
+            err: lastErr || 'update error (candidates exhausted)',
+            candidates: SUCCESS_CANDIDATES,
+            dep: { id: dep.id, status: dep.status, provider_id: dep.provider_id }
+          }));
           return;
         }
         res.statusCode = 200; noStore(res); res.end('mark fail');
         return;
-      }
-
-      // Verify post-update status (best-effort; do not fail hard if mismatch)
-      const chk = await sb
-        .from('deposits')
-        .select('status,provider_id')
-        .eq('id', dep.id)
-        .single();
-      if ((chk as any)?.error) {
-        try { await safeLog('post_update_fetch_failed', { deposit_id: dep.id, err: (chk as any)?.error?.message }, 200); } catch {}
-      } else if ((chk as any)?.data?.status && !FINAL_STATUSES.includes(String((chk as any).data.status || '').toLowerCase())) {
-        try { await safeLog('post_update_status_mismatch', { deposit_id: dep.id, got: (chk as any).data.status }, 200); } catch {}
       }
 
       // ensure wallet exists (handle "no rows" explicitly)
@@ -291,14 +341,12 @@ export default async function handler(req: any, res: any) {
       if (wSel.data) {
         current = Number(wSel.data.balance_cents ?? 0);
       } else if (wSel.error && (wSel.error.code === 'PGRST116' || /Results contain 0 rows/i.test(String(wSel.error.message)))) {
-        // no wallet row — create one at zero
         try { await sb.from('wallets').insert({ user_id: dep.user_id, balance_cents: 0, currency: 'usd' }); } catch {}
       } else if (wSel.error) {
         await safeLog('wallet_select_failed', { user_id: dep.user_id, err: wSel.error.message }, 200);
       }
 
       const next = current + Number(dep.amount_cents || 0);
-
       const wUpd = await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
       if (wUpd.error) {
         await safeLog('wallet_update_failed', { user_id: dep.user_id, err: wUpd.error.message }, 200);
@@ -306,7 +354,7 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      await safeLog('wallet_credited', { deposit_id: dep.id, user_id: dep.user_id, amount_cents: dep.amount_cents, next_balance_cents: next }, 200);
+      await safeLog('wallet_credited', { deposit_id: dep.id, user_id: dep.user_id, amount_cents: dep.amount_cents, next_balance_cents: next, usedStatus }, 200);
     } else if (canceledOrFailed) {
       await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
       await safeLog('marked_canceled', { deposit_id: dep.id, plinkId, status, type }, 200);
