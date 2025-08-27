@@ -124,14 +124,24 @@ export default async function handler(req: any, res: any) {
     }
 
     const paymentLink = json?.payment_link;
-    await sb.from('deposits').update({ provider_id: paymentLink?.id || null, provider_payload: json }).eq('id', dep.id);
+    await sb.from('deposits').update({
+      provider_id: paymentLink?.id || null,
+      provider_order_id: paymentLink?.order_id || null,
+      provider_payload: json
+    }).eq('id', dep.id);
 
     try {
       await sb.from('webhook_logs').insert({
         source: 'square',
         event: 'create_ok',
         http_status: 200,
-        payload: { depositId: dep.id, provider_id: paymentLink?.id, url: paymentLink?.url, amount_cents },
+        payload: {
+          depositId: dep.id,
+          provider_id: paymentLink?.id,
+          order_id: paymentLink?.order_id,
+          url: paymentLink?.url,
+          amount_cents
+        },
       });
     } catch {}
 
@@ -139,6 +149,7 @@ export default async function handler(req: any, res: any) {
       url: paymentLink?.url,
       deposit_id: dep.id,
       payment_link_id: paymentLink?.id,
+      order_id: paymentLink?.order_id,
       amount_cents,
       method: 'square',
       env: isProd ? 'production' : 'sandbox',

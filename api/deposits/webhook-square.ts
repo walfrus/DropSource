@@ -42,6 +42,19 @@ function extractPaymentLinkId(body: any): string | null {
   return null;
 }
 
+function extractOrderId(body: any): string | null {
+  const d = body?.data;
+  const obj = d?.object ?? d?.data ?? body?.object ?? {};
+  const candidates: Array<any> = [
+    obj?.payment?.order_id,
+    obj?.order?.id,
+    obj?.checkout?.order_id,
+    obj?.order_id,
+  ];
+  for (const c of candidates) if (typeof c === 'string' && c.trim()) return c.trim();
+  return null;
+}
+
 function extractPaymentStatus(body: any): string | null {
   const status =
     body?.data?.object?.payment?.status ??
@@ -109,22 +122,24 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    await safeLog('incoming', { type: body?.type, sample: body?.data?.id || null }, 200);
+    await safeLog('incoming', { type: body?.type, sample: body?.data?.id || null, orderId: extractOrderId(body), paymentLinkId: extractPaymentLinkId(body) }, 200);
 
     const type = extractEventType(body);
     const status = extractPaymentStatus(body);
     const plinkId = extractPaymentLinkId(body);
+    const orderId = extractOrderId(body);
 
-    if (!plinkId) {
-      await safeLog('no_payment_link_id', { type, status }, 200);
-      res.statusCode = 200; noStore(res); res.end('ok');
-      return;
+    let dep: any = null;
+    if (orderId) {
+      const byOrder = await sb.from('deposits').select('*').eq('provider_order_id', orderId).single();
+      dep = byOrder.data as any;
     }
-
-    const depSel = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
-    const dep = depSel.data as any;
+    if (!dep && plinkId) {
+      const byLink = await sb.from('deposits').select('*').eq('provider_id', plinkId).single();
+      dep = byLink.data as any;
+    }
     if (!dep) {
-      await safeLog('deposit_not_found', { plinkId }, 200);
+      await safeLog('deposit_not_found', { orderId, plinkId, type, status }, 200);
       res.statusCode = 200; noStore(res); res.end('ok');
       return;
     }
@@ -172,7 +187,7 @@ export default async function handler(req: any, res: any) {
     } else {
       // non-terminal — stash payload so we can inspect later
       try { await sb.from('deposits').update({ provider_payload: body }).eq('id', dep.id); } catch {}
-      await safeLog('ignored_event', { type, status, plinkId }, 200);
+      await safeLog('ignored_event', { type, status, plinkId, orderId }, 200);
     }
 
     res.statusCode = 200; noStore(res); res.end('ok');
