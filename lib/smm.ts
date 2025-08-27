@@ -2,6 +2,14 @@
 import * as crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+// normalize booleans from panels: 1/0, "1"/"0", yes/no/true/false
+function toBool(v: any): boolean {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0 || v == null) return false;
+  const t = String(v).trim().toLowerCase();
+  return t === '1' || t === 'true' || t === 'yes' || t === 'y';
+}
+
 // -------- Panel helpers --------
 export async function callPanel(
   action: string,
@@ -69,9 +77,9 @@ export function mapService(s: any) {
     max: Number(s.max ?? s.max_order ?? 0),
     type: String(s.type ?? 'Default'),
     flags: {
-      dripfeed: Boolean(s.dripfeed ?? s.drip ?? false),
-      refill: Boolean(s.refill ?? s.refill_time ?? false),
-      cancel: Boolean(s.cancel ?? false),
+      dripfeed: toBool(s.dripfeed ?? s.drip ?? false),
+      refill: toBool(s.refill ?? s.refill_time ?? false),
+      cancel: toBool(s.cancel ?? false),
       real: /real/i.test(String(s.description ?? s.note ?? rawName)),
       fast: /fast|instant|speed/i.test(rawName),
     },
@@ -91,10 +99,9 @@ export async function ensureUserAndWallet(
   );
 
   // ensure wallet without throwing if it already exists
-  const now = new Date().toISOString();
   const { error } = await sb.from('wallets').upsert(
-    { user_id: user.id, balance_cents: 0, currency: 'usd', updated_at: now },
-    { onConflict: 'user_id', ignoreDuplicates: true }
+    { user_id: user.id, balance_cents: 0, currency: 'usd' },
+    { onConflict: 'user_id' }
   );
 
   // ignore typical duplicate errors, surface others
@@ -126,7 +133,7 @@ export async function creditDepositByPaymentLinkId(
   const cur = Number(wSel.data?.balance_cents ?? 0);
   const next = cur + Number(dep.amount_cents || 0);
 
-  const wUpd = await sb.from('wallets').update({ balance_cents: next, updated_at: new Date().toISOString() }).eq('user_id', dep.user_id);
+  const wUpd = await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
   if (wUpd.error) return { ok: false, error: wUpd.error.message };
 
   return { ok: true, user_id: dep.user_id, deposit_id: dep.id, amount_cents: dep.amount_cents };

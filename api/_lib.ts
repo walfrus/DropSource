@@ -3,6 +3,16 @@
 import * as crypto from 'crypto';
 export { crypto };
 
+// Normalize common "boolean" shapes from panels: true/false, 1/0, "1"/"0", "yes"/"no"
+function toBool(v: any): boolean {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0 || v === null || v === undefined) return false;
+  const t = String(v).trim().toLowerCase();
+  if (t === '1' || t === 'true' || t === 'yes' || t === 'y') return true;
+  if (t === '0' || t === 'false' || t === 'no' || t === 'n' || t === '') return false;
+  return Boolean(v);
+}
+
 // --- SMM PANEL --------------------------------------------------------------
 
 /**
@@ -96,9 +106,9 @@ export function mapService(s: any) {
     max,
     type: String(s.type ?? s.kind ?? 'Default'),
     flags: {
-      dripfeed: Boolean(s.dripfeed ?? s.drip ?? false),
-      refill: Boolean(s.refill ?? s.refill_time ?? false),
-      cancel: Boolean(s.cancel ?? false),
+      dripfeed: toBool(s.dripfeed ?? s.drip ?? false),
+      refill: toBool(s.refill ?? s.refill_time ?? false),
+      cancel: toBool(s.cancel ?? false),
       real: /real/i.test(String(s.description ?? s.note ?? '')) || /real/i.test(rawName),
       fast: /fast|instant|speed/i.test(rawName),
     },

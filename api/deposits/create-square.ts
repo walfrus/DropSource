@@ -112,7 +112,7 @@ export default async function handler(req: any, res: any) {
     if (!r.ok) {
       // mark failed + log for visibility
       try {
-        await sb.from('deposits').update({ status: 'failed', provider_payload: json }).eq('id', dep.id);
+        await sb.from('deposits').update({ status: 'failed' }).eq('id', dep.id);
         await sb.from('webhook_logs').insert({
           source: 'square',
           event: 'create_failed',
@@ -150,8 +150,7 @@ export default async function handler(req: any, res: any) {
 
     await sb.from('deposits').update({
       provider_id: paymentLink?.id || null,
-      provider_order_id: orderId || null,
-      provider_payload: json
+      provider_order_id: orderId || null
     }).eq('id', dep.id);
 
     try {

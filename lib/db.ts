@@ -1,27 +1,45 @@
-// /lib/db.ts — server-only Supabase client
-import { createClient } from '@supabase/supabase-js';
+// /lib/db.ts
+// Server-side Supabase client (service role).
+// Other files import:  import { sb } from '../../lib/db.js'
+// NOTE: No route logic belongs here.
 
-// Hard guard: never import this in the browser (prevents accidental bundling)
-if (typeof window !== 'undefined') {
-  throw new Error('Do not import lib/db on the client (service role key)');
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  '';
+
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  '';
+
+// Singleton so Vercel lambdas reuse the same instance between invocations.
+let _sb: SupabaseClient | null = null;
+
+function makeClient(): SupabaseClient {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    // Keep a readable error in logs – do NOT throw here to avoid 500 spam.
+    console.warn('[db] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    db: { schema: 'public' },
+    global: {
+      headers: { 'X-Client-Info': 'dropsource/1.0 server' },
+    },
+  });
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Export a shared client for normal use.
+export const sb: SupabaseClient = (_sb ||= makeClient());
 
-if (!SUPABASE_URL) {
-  throw new Error('Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)');
+// Optionally get a fresh isolated client (rarely needed).
+export function newAdminClient(): SupabaseClient {
+  return makeClient();
 }
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
-}
-
-// Reuse a single instance across hot reloads (dev) / Lambda cold starts (prod)
-// @ts-ignore
-const globalAny = globalThis as any;
-export const sb =
-  globalAny.__SB_SERVER__ ||
-  (globalAny.__SB_SERVER__ = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { headers: { 'X-Client-Info': 'dropsource-server' } },
-  }));

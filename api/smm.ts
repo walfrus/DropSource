@@ -9,6 +9,14 @@ function numFromEnv(name: string, def: number): number {
   return Number.isFinite(n) ? n : def;
 }
 
+// normalize booleans coming back as 1/0/"1"/"0"/"yes"/"no"
+function toBool(v: any): boolean {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0 || v == null) return false;
+  const t = String(v).trim().toLowerCase();
+  return t === '1' || t === 'true' || t === 'yes' || t === 'y';
+}
+
 // accept both PANEL_* and SMM_* naming
 const PANEL_API_URL = process.env.PANEL_API_URL || process.env.SMM_API_URL || process.env.SMM_API || "";
 const PANEL_API_KEY = process.env.PANEL_API_KEY || process.env.SMM_API_KEY || process.env.SMM_KEY || "";
@@ -70,10 +78,13 @@ export default async function handler(req: any, res: any) {
       const { action, service, link, quantity, runs, interval } = req.body || {};
 
       if (action === "add") {
-        if (!service || !link || !quantity) {
-          return res.status(400).json({ error: "Missing required params" });
+        const svcId = Number(service);
+        const href = String(link || '').trim();
+        const qty = Number(quantity);
+        if (!svcId || !href || !Number.isFinite(qty) || qty <= 0) {
+          return res.status(400).json({ error: "Missing or invalid params" });
         }
-        const payload: any = { action: "add", service, link, quantity };
+        const payload: any = { action: "add", service: svcId, link: href, quantity: qty };
         if (runs) payload.runs = runs;
         if (interval) payload.interval = interval;
 
@@ -145,14 +156,14 @@ function normalizeService(raw: any) {
   const rate = Number(raw.rate ?? raw.price ?? raw.price_per_1k ?? raw.pricePer1000 ?? raw.price_per_1000) || 0; // provider price per 1k
   const price = applyPricing(rate);
   return {
-    id: Number(raw.service ?? raw.id),
+    id: Number(raw.service ?? raw.id ?? 0),
     name: `[DropSource] — ${clean(raw.name ?? raw.title ?? "Service")}`,
-    category: raw.category || "Other",
+    category: clean(String(raw.category || "Other")),
     price_per_1k: price,
     min: Number(raw.min ?? raw.min_order) || 0,
     max: Number(raw.max ?? raw.max_order) || 0,
-    dripfeed: Boolean(raw.dripfeed ?? raw.drip),
-    refill: Boolean(raw.refill),
+    dripfeed: toBool(raw.dripfeed ?? raw.drip),
+    refill: toBool(raw.refill ?? raw.refill_time),
     description: String(raw.description || raw.desc || ""),
   };
 }

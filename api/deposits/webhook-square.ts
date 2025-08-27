@@ -165,14 +165,24 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const { data: dep, error: findErr } = await sb
+    const restrictStatus = String(req.headers['x-debug-no-status'] || '') !== '1';
+
+    let q = sb
       .from('deposits')
       .select('id,user_id,status,amount_cents,provider_id,provider_order_id')
-      .eq('status', 'pending')
       .or(orConds.join(','))
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    if (restrictStatus) {
+      // normal mode — only pick pending rows
+      // (during sandbox/manual tests you can send x-debug-no-status: 1 to ignore this)
+      // @ts-ignore
+      q = q.eq('status', 'pending');
+    }
+
+    // @ts-ignore
+    const { data: dep, error: findErr } = await q.maybeSingle();
 
     if (findErr) {
       await safeLog('find_error', { msg: findErr.message, orderId, plinkId, payId }, 200);
@@ -193,10 +203,9 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // decide terminal states
-    const typeIsPayment = type.includes('PAYMENT');
-    const completed = (typeIsPayment && type.includes('COMPLETED')) || status === 'COMPLETED' || status === 'CAPTURED' || status === 'APPROVED';
-    const canceledOrFailed = (typeIsPayment && (type.includes('CANCELED') || type.includes('FAILED'))) || status === 'CANCELED' || status === 'FAILED' || status === 'DECLINED';
+    // decide terminal states – rely on payment.status only
+    const completed = status === 'COMPLETED' || status === 'APPROVED' || status === 'CAPTURED';
+    const canceledOrFailed = status === 'CANCELED' || status === 'FAILED' || status === 'DECLINED';
 
     if (completed) {
       // mark paid + store payload
@@ -231,7 +240,7 @@ export default async function handler(req: any, res: any) {
 
       const next = current + Number(dep.amount_cents || 0);
 
-      const wUpd = await sb.from('wallets').update({ balance_cents: next, updated_at: new Date().toISOString() }).eq('user_id', dep.user_id);
+      const wUpd = await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
       if (wUpd.error) {
         await safeLog('wallet_update_failed', { user_id: dep.user_id, err: wUpd.error.message }, 200);
         res.statusCode = 200; noStore(res); res.end('wallet fail');
@@ -240,7 +249,7 @@ export default async function handler(req: any, res: any) {
 
       await safeLog('wallet_credited', { deposit_id: dep.id, user_id: dep.user_id, amount_cents: dep.amount_cents, next_balance_cents: next }, 200);
     } else if (canceledOrFailed) {
-      await sb.from('deposits').update({ status: 'canceled', provider_payload: body }).eq('id', dep.id);
+      await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
       await safeLog('marked_canceled', { deposit_id: dep.id, plinkId, status, type }, 200);
     } else {
       // non-terminal — stash payload so we can inspect later

@@ -107,16 +107,14 @@ export default async function handler(req: any, res: any) {
       } catch {}
 
       await sb.from('deposits').update({
-        status: 'failed',
-        provider_payload: json,
+        status: 'failed'
       }).eq('id', dep.id);
 
       return send(res, 400, { error: json?.error?.message || 'coinbase_failed', status: resp.status });
     }
 
     await sb.from('deposits').update({
-      provider_id: json?.data?.id || null,
-      provider_payload: json,
+      provider_id: json?.data?.id || null
     }).eq('id', dep.id);
 
     try {

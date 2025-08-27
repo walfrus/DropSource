@@ -84,8 +84,8 @@ export default async function handler(req: any, res: any) {
     }
 
     if (type === 'charge:confirmed' || type === 'charge:resolved') {
-      // mark paid & persist last payload (best effort)
-      const upd = await sb.from('deposits').update({ status: 'paid', provider_payload: body }).eq('id', dep.id);
+      // mark paid (do not write non-existent provider_payload column)
+      const upd = await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
       if (upd.error) {
         await safeLog({ source: 'coinbase', event: 'MARK_PAID_FAIL', http_status: 200, payload: { deposit_id: dep.id, err: upd.error.message } });
         res.statusCode = 200; noStore(res); res.end('mark fail');
@@ -99,7 +99,7 @@ export default async function handler(req: any, res: any) {
         try { await sb.from('wallets').insert({ user_id: dep.user_id, balance_cents: 0, currency: 'usd' }); } catch {}
       }
       const next = cur + Number(dep.amount_cents || 0);
-      const wUpd = await sb.from('wallets').update({ balance_cents: next, updated_at: new Date().toISOString() }).eq('user_id', dep.user_id);
+      const wUpd = await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
       if (wUpd.error) {
         await safeLog({ source: 'coinbase', event: 'WALLET_UPDATE_FAIL', http_status: 200, payload: { user_id: dep.user_id, err: wUpd.error.message } });
         res.statusCode = 200; noStore(res); res.end('wallet fail');
@@ -108,10 +108,9 @@ export default async function handler(req: any, res: any) {
 
       await safeLog({ source: 'coinbase', event: 'WALLET_CREDITED', http_status: 200, payload: { user_id: dep.user_id, amount_cents: dep.amount_cents } });
     } else if (type === 'charge:failed') {
-      await sb.from('deposits').update({ status: 'canceled', provider_payload: body }).eq('id', dep.id);
+      await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
     } else {
       // non-terminal events — just store latest payload
-      try { await sb.from('deposits').update({ provider_payload: body }).eq('id', dep.id); } catch {}
     }
 
     res.statusCode = 200; noStore(res); res.end('ok');
