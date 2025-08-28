@@ -99,3 +99,5 @@ export default async function handler(req: any, res: any) {
     return send(res, 200, { error: 'server_error' });
   }
 }
+
+export const config = { runtime: 'nodejs20.x' };
