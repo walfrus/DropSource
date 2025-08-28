@@ -11,6 +11,7 @@
     SMMGOAL_PASSWORD     -> login password (required if the page requires auth)
     SMMGOAL_BASE         -> optional base URL (default https://smmgoal.com)
     HEADLESS             -> set to "0" to watch the browser, defaults to headless
+    PLAYWRIGHT_PROFILE_DIR -> optional dir to store a persistent session (default .playwright/smmgoal)
 */
 import { chromium } from 'playwright';
 import type { Page } from 'playwright';
@@ -67,7 +68,18 @@ async function smartClick(page: Page, selector: string) {
   }
 }
 
+type WaitUntil = 'load' | 'domcontentloaded' | 'networkidle' | 'commit';
+const WAIT_UNTIL: WaitUntil = (process.env.WAIT_UNTIL as WaitUntil) || 'domcontentloaded';
+
 async function ensureLoggedIn(page: Page) {
+  // First try hitting /services directly; if already logged-in, bail early
+  try {
+    await page.goto(`${process.env.SMMGOAL_BASE?.replace(/\/$/, '') || 'https://smmgoal.com'}/services`, { waitUntil: WAIT_UNTIL, timeout: 30_000 });
+    // If there's no password field visible, assume we're in
+    const hasPass = await page.locator('input[type="password"], input[name="password" i], #password').first().count();
+    if (!hasPass) return;
+  } catch {}
+
   const BASE = process.env.SMMGOAL_BASE?.replace(/\/$/, '') || 'https://smmgoal.com';
   const username = process.env.SMMGOAL_USERNAME || process.env.SMMGOAL_EMAIL || '';
   const password = process.env.SMMGOAL_PASSWORD || '';
@@ -80,14 +92,19 @@ async function ensureLoggedIn(page: Page) {
   let landed = false;
   for (const p of loginPaths) {
     try {
-      await page.goto(`${BASE}${p}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await page.goto(`${BASE}${p}`, { waitUntil: WAIT_UNTIL, timeout: 30_000 });
       landed = true; break;
     } catch (_) {}
   }
   if (!landed) {
     // As a fallback, go to home and click any visible Login link
-    await page.goto(BASE, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page.goto(BASE, { waitUntil: WAIT_UNTIL }).catch(() => {});
     await smartClick(page, 'a:has-text("Login"), a:has-text("Sign in"), a[href*="login" i]');
+  }
+
+  // If Cloudflare / bot check appears, give it time
+  if (await page.locator('text=Just a moment, text=Checking your browser').first().count()) {
+    await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
   }
 
   // Fill the form defensively
@@ -198,18 +215,27 @@ async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string):
   const headless = process.env.HEADLESS === '0' ? false : true;
 
   const out: Svc[] = [];
-  const browser = await chromium.launch({ headless });
-  const page = await browser.newPage({
-    userAgent: 'Mozilla/5.0 (compatible; DropsourceBot/1.0; +https://drop-source.vercel.app)'
+  const userDir = process.env.PLAYWRIGHT_PROFILE_DIR || '.playwright/smmgoal';
+  const context = await chromium.launchPersistentContext(userDir, {
+    headless,
+    viewport: { width: 1366, height: 900 },
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
   });
+  await context.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+  const page = await context.newPage();
+  page.on('console', (m) => console.log('[page]', m.type(), m.text()));
 
   try {
     await ensureLoggedIn(page);
 
     for (const url of urls) {
       console.log('[scrape] Visiting', url);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.goto(url, { waitUntil: WAIT_UNTIL, timeout: 60_000 });
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+      // Try to ensure some service DOM is present; if not, take a debug shot
+      await page.locator('table, .service-row, tr').first().waitFor({ timeout: 15_000 }).catch(() => {});
+      await page.screenshot({ path: '.playwright/after-goto.png', fullPage: true }).catch(() => {});
 
       // Some panels lazy-load; scroll a bit to force render
       for (let k = 0; k < 5; k++) {
@@ -226,7 +252,7 @@ async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string):
       out.push(...batch);
     }
   } finally {
-    await browser.close();
+    await context.close();
   }
 
   const services: Svc[] = out
@@ -247,7 +273,8 @@ async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string):
 
   await writeFile('./smmgoals.services.json', JSON.stringify(services, null, 2));
   console.log(`[scrape] Wrote ${services.length} services to smmgoals.services.json`);
-})().catch((err) => {
+})().catch(async (err) => {
   console.error('[scrape] Failed:', err);
+  try { await writeFile('.playwright/error.txt', String(err)); } catch {}
   process.exitCode = 1;
 });
