@@ -1,88 +1,19 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DropSource — SMM</title>
-  <style>
-    :root{
-      --bg:#0b0b0f; --card:#15161a; --txt:#e8ecf1; --muted:#a6acb3;
-      --stroke:#24262c; --chip:#1c2028; --brand:#59a0ff; --shadow:0 6px 24px rgba(0,0,0,.35);
-      --c-blue:hsla(210,90%,60%,.16); --t-blue:#a3c5ff;
-      --c-green:hsla(150,55%,55%,.16); --t-green:#b9f1d6;
-      --c-amber:hsla(40,85%,60%,.16);  --t-amber:#f4d3a5;
-      --c-purple:hsla(265,60%,65%,.16);--t-purple:#d4c0ff;
-      --c-gray:hsla(220,12%,60%,.14);  --t-gray:#cbd3db;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
-    header{padding:16px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--stroke);position:sticky;top:0;background:linear-gradient(180deg,rgba(11,11,15,.95),rgba(11,11,15,.85));backdrop-filter:saturate(120%) blur(6px);z-index:10}
-    .brand{color:var(--brand);font-weight:700}
-    .container{max-width:1100px;margin:0 auto;padding:16px}
-    input,select,button{background:#11131a;border:1px solid var(--stroke);color:var(--txt);padding:10px 12px;border-radius:10px}
-    button{cursor:pointer}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .muted{color:var(--muted)}
-    .chip{padding:3px 8px;border-radius:999px;background:var(--chip);color:#b9c2cc;font-size:12px;border:1px solid rgba(255,255,255,.04)}
-    .chip.s{font-size:11px;padding:2px 6px}
-    .chip.blue{background:var(--c-blue);color:var(--t-blue)}
-    .chip.green{background:var(--c-green);color:var(--t-green)}
-    .chip.amber{background:var(--c-amber);color:var(--t-amber)}
-    .chip.purple{background:var(--c-purple);color:var(--t-purple)}
-    .chip.gray{background:var(--c-gray);color:var(--t-gray)}
-
-    .section{border:1px solid var(--stroke);border-radius:14px;overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow)}
-    .section > .head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#111218;border-bottom:1px solid var(--stroke);cursor:pointer}
-    .section > .body{padding:14px;display:none}
-    .section.open > .body{display:block}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
-
-    .card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s, box-shadow .15s, background .15s}
-    .section:hover .card{background:linear-gradient(0deg, rgba(255,255,255,.01), transparent)}
-    .card:hover{border-color:var(--plat, var(--brand)); box-shadow:0 0 0 1px var(--plat, var(--brand)) inset, var(--shadow)}
-    .card h3{margin:0;font-size:15px;line-height:1.35}
-    .price{font-weight:700}
-    .btn{padding:8px 10px;border-radius:10px;background:#10131a;border:1px solid var(--stroke)}
-    .btn:hover{border-color:var(--plat, #7aa9ff)}
-    .footer{opacity:.7;font-size:12px;padding:18px;text-align:center}
-
-    details{background:#12141b;border:1px dashed rgba(255,255,255,.06);border-radius:12px}
-    details>summary{list-style:none;padding:8px 10px;cursor:pointer;color:var(--muted)}
-    details[open]>summary{color:#d6deea}
-    .variant{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-top:1px solid rgba(255,255,255,.04)}
-    .toolbar{display:flex;gap:8px;align-items:center}
-  </style>
-</head>
-<body>
-  <header>
-    <div><strong class="brand">DropSource</strong> · Boosts</div>
-    <div class="row">
-      <input id="q" placeholder="Search services…"/>
-      <select id="cat"><option value="">All platforms</option></select>
-      <div class="toolbar">
-        <button id="expandAll" class="btn">Expand all</button>
-        <button id="collapseAll" class="btn">Collapse all</button>
-        <button id="reload" class="btn">Reload</button>
-      </div>
-    </div>
-  </header>
-
-  <div class="container" id="wrap"></div>
-  <div class="footer">Powered by <span class="brand">DropSource</span> • your growth plug, but like… responsibly ✌️</div>
-
 <script>
+// --- config & dom refs -------------------------------------------------------
 const API = '/api/smm';
 const elQ = document.getElementById('q');
 const elCat = document.getElementById('cat');
 const elWrap = document.getElementById('wrap');
 
-document.getElementById('reload').onclick = load;
-document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
-document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
+// controls
+(document.getElementById('reload')||{}).onclick = load;
+(document.getElementById('expandAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
+(document.getElementById('collapseAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
 elQ.oninput = load; elCat.onchange = load;
 
 function showErr(m){ console.error(m); alert(m); }
 
+// --- platform meta -----------------------------------------------------------
 const PLATFORM_COLORS = {
   Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
   TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
@@ -99,113 +30,152 @@ const PLATFORM_COLORS = {
 function detectPlatform(str=''){
   const s = String(str).toLowerCase();
   const map = [
-    ['Instagram',/insta| ig\b/],
-    ['Telegram',/telegram|tg\b/],
-    ['Twitter',/\btwitter\b/],
-    ['X',/\bx\b(?![^a-z])/],
-    ['TikTok',/tiktok|tt\b/],
-    ['Facebook',/facebook|fb\b/],
-    ['YouTube',/youtube|yt\b/],
+    ['Instagram',/(^|\b)(instagram|ig)\b/],
+    ['Telegram',/(^|\b)(telegram|tg)\b/],
+    ['Twitter',/(^|\b)twitter\b/],
+    ['X',/(^|\b)x\b(?![a-z])/],
+    ['TikTok',/(^|\b)(tiktok|tt)\b/],
+    ['Facebook',/(^|\b)(facebook|fb)\b/],
+    ['YouTube',/(^|\b)(youtube|yt|shorts)\b/],
     ['Spotify',/spotify/],
     ['SoundCloud',/soundcloud/],
-    ['Threads',/threads\b/],
-    ['VK',/\bvk\b|vkontakte/],
+    ['Threads',/(^|\b)threads?\b/],
+    ['VK',/(^|\b)vk\b|vkontakte/],
     ['Twitch',/twitch/],
     ['Reddit',/reddit/],
     ['Pinterest',/pinterest/],
-    ['LinkedIn',/linkedin/],
+    ['LinkedIn',/(^|\b)linkedin\b/],
     ['Snapchat',/snapchat/],
     ['Discord',/discord/],
     ['Shazam',/shazam/],
     ['Vimeo',/vimeo/],
     ['Quora',/quora/],
     ['Mixcloud',/mixcloud/],
-    ['OK.ru',/ok\.?ru|\bok\b/],
+    ['OK.ru',/ok\.?ru|(^|\b)ok\b/],
     ['Audiomack',/audiomack/],
     ['Dailymotion',/dailymotion/],
     ['Reverbnation',/reverbnation/],
     ['Tumblr',/tumblr/],
     ['WhatsApp',/whatsapp/],
-    ['Website',/website|web ?traffic|seo|premium traffic|site traffic|webtraffic/i],
-    ['Mobile',/mobile|app installs?/i],
-    ['Crypto',/crypto|bitcoin|btc|eth|ethereum/i],
-    ['GeoTarget',/geo|country|region|target/i],
-    ['GoogleReviews',/google ?reviews?/i],
-    ['OwnWebsite',/ownwebsite|own website/i],
-    ['MaskedTraffic',/masked ?traffic/i],
+    ['Website',/\bwebsite\b|web ?traffic|seo|site traffic|webtraffic/],
+    ['Mobile',/\bmobile\b|app installs?/],
+    ['Crypto',/crypto|bitcoin|\bbtc\b|\beth\b|ethereum/],
+    ['GeoTarget',/\bgeo|country|region|target/],
+    ['GoogleReviews',/google ?reviews?/],
+    ['OwnWebsite',/ownwebsite|own website/],
+    ['MaskedTraffic',/masked ?traffic/],
     ['Podcast',/podcast/],
-    ['MassDM',/massdm|mass dm/i],
-    ['Exchange',/exchange/i],
+    ['MassDM',/mass ?dm/],
+    ['Exchange',/exchange/],
   ];
   for (const [name,rx] of map) if (rx.test(s)) return name;
   return 'Other';
 }
 
+// --- typing & summarization --------------------------------------------------
 const TYPE_PATTERNS = [
   ['Followers', /follows?|followers?|subs?(cribers?)?/i],
   ['Likes', /likes?/i],
-  ['Views', /views?|plays?|watch(?:time)?/i],
+  ['Views', /views?|plays?|watch(?: ?time)?/i],
   ['Comments', /comments?/i],
   ['Saves', /saves?/i],
-  ['Shares', /shares?/i],
+  ['Shares', /shares?|reposts?/i],
   ['Impressions', /impressions?/i],
-  ['Votes', /votes?/i],
+  ['Votes', /votes?|poll/i],
   ['Members', /members?/i],
-  ['Reposts', /reposts?/i],
+  ['Mentions', /mentions?/i],
   ['Story', /story|stories/i],
+  ['Live', /live\b/i],
   ['Traffic', /traffic|visits?/i],
   ['Other', /.*/]
 ];
+function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
 
-function getBaseType(name){
-  for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label;
-  return 'Other';
+function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+function formatK(n){ n = Number(n||0); if(n>=1_000_000) return (n/1_000_000).toFixed(n%1_000_000?1:0)+'M'; if(n>=1_000) return (n/1_000).toFixed(n%1_000?1:0)+'K'; return String(n); }
+function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||'' }
+function stripEmojis(str){ return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu,''); }
+function baseLabel(name){ const s = stripEmojis(String(name||'')); const cut = s.split(/[\[|]/)[0]; return cut.replace(/smmgoal/ig,'').replace(/\s+/g,' ').trim(); }
+
+function extractMeta(name){
+  const s = String(name||'');
+  const chips = [];
+  const add = (t,kind='gray')=>chips.push({text:t,kind});
+  // refill
+  const r1 = s.match(/(\d{1,3})\s*Days?\s*Refill/i); if(r1) add(`Refill ${r1[1]}d`,'green');
+  const r2 = s.match(/\bR(B)?(\d{1,3})\b/i); if(r2) add(`Refill ${r2[2]}d`,'green');
+  if(/no\s*refill|non\s*refill|no\s*support/i.test(s)) add('No refill','amber');
+  // speed / start
+  if(/instant|0-?\s*\d+\s*min/i.test(s)) add('Instant','green');
+  const spd = s.match(/speed[:\s]*(\d+[kKmM]?)[^\w]*/i); if(spd) add(`Speed ${spd[1]}/d`,'blue');
+  // quality / drop
+  if(/no\s*drop|non\s*drop/i.test(s)) add('No drop','purple');
+  if(/hq|high\s*quality|premium/i.test(s)) add('HQ','purple');
+  if(/cheap|cheapest/i.test(s)) add('Cheapest','amber');
+  // geo (lightweight)
+  const geos = ['USA','US','UK','Germany','France','Italy','Spain','Brazil','Korea','Japan','India','Turkey','Canada'];
+  for(const g of geos){ const rx = new RegExp(`\\b${g}\\b`,'i'); if(rx.test(s)){ add(g.toUpperCase(),'blue'); break; } }
+  return chips;
 }
 
-function makeTags(name){
-  const n = String(name||'');
-  const tags = [];
-  const add = (txt, kind='gray') => tags.push({text:txt,kind});
-  if (/fast|instant/i.test(n)) add('Fast','green');
-  if (/cheap|cheapest/i.test(n)) add('Cheapest','amber');
-  if (/real|hq|quality/i.test(n)) add('HQ','purple');
-  if (/refill/i.test(n)) add('Refill','green');
-  if (/drip/i.test(n)) add('Dripfeed','purple');
-  if (/old accounts?/i.test(n)) add('Old Accounts','gray');
-  if (/new accounts?/i.test(n)) add('New Accounts','gray');
-  return tags;
+function summarizeVariant(svc, plat, type){
+  const label = baseLabel(svc.name) || type || 'Variant';
+  const chips = extractMeta(svc.name);
+  chips.unshift({text:`Min ${formatK(svc.min)}`,kind:'gray'});
+  chips.unshift({text:`Max ${formatK(svc.max)}`,kind:'gray'});
+  return {label, chips};
 }
 
+// --- data load & rendering ---------------------------------------------------
 async function load(){
   const q = encodeURIComponent(elQ.value||'');
   const cat = encodeURIComponent(elCat.value||'');
   const url = `${API}?action=services${q?`&q=${q}`:''}${cat?`&category=${cat}`:''}`;
-  const res = await fetch(url);
-  let data;
-  try{ data = await res.json(); } catch { showErr('Failed to parse services'); return; }
+  let res, data; try{ res = await fetch(url); data = await res.json(); } catch { showErr('Failed to load services'); return; }
   if(!Array.isArray(data)){ showErr(data?.error||'Failed to load services'); return; }
 
-  const MIN_PRICE = 0.10;   // $/1k sanity
-  const MAX_PRICE = 100.00; // $/1k sanity
-
+  // group by platform -> base type
   const byPlat = new Map();
   for(const s of data){
-    if (s.price_per_1k < MIN_PRICE || s.price_per_1k > MAX_PRICE) continue;
-    const plat = detectPlatform(`${s.category} ${s.name}`);
-    const type = getBaseType(s.name);
+    const plat = detectPlatform(`${s.category||''} ${s.name||''}`);
+    const type = getBaseType(s.name||'');
     if(!byPlat.has(plat)) byPlat.set(plat, new Map());
-    const m = byPlat.get(plat);
-    if(!m.has(type)) m.set(type, []);
+    const m = byPlat.get(plat); if(!m.has(type)) m.set(type, []);
     m.get(type).push(s);
   }
 
+  // fill category select once
   if(!elCat.dataset.filled){
     const plats = [...byPlat.keys()].sort();
     for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
     elCat.dataset.filled='1';
   }
 
+  // render
   elWrap.innerHTML = '';
+
+  // top-level category cards (by platform)
+  const catsGrid = document.createElement('div');
+  catsGrid.className = 'grid';
+  for (const [p, m] of byPlat) {
+    const catCard = document.createElement('div');
+    catCard.className = 'card';
+    catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
+    catCard.innerHTML = `
+      <h3 style="display:flex;justify-content:space-between;align-items:center">
+        <span>${escapeHtml(p)}</span>
+        <span class="chip s gray">${countServices(m)} services</span>
+      </h3>
+      <div class="muted">Click to explore</div>
+    `;
+    catCard.onclick = () => {
+      const sec = elWrap.querySelector(`section[data-plat="${p}"]`);
+      if (sec) { sec.classList.add('open'); sec.scrollIntoView({behavior:'smooth', block:'start'}); }
+    };
+    catsGrid.appendChild(catCard);
+  }
+  elWrap.appendChild(catsGrid);
+
   const want = elCat.value;
   for(const [plat, byType] of byPlat){
     if(want && plat!==want) continue;
@@ -213,6 +183,7 @@ async function load(){
 
     const sec = document.createElement('section');
     sec.className='section';
+    sec.setAttribute('data-plat', plat);
     sec.style.setProperty('--plat', color);
     sec.innerHTML = `
       <div class="head">
@@ -228,41 +199,42 @@ async function load(){
 
     const grid = sec.querySelector('.grid');
     for(const [type, list0] of byType){
-      const list = list0
-        .filter(svc => svc.price_per_1k >= MIN_PRICE && svc.price_per_1k <= MAX_PRICE)
-        .sort((a,b)=>a.price_per_1k - b.price_per_1k);
-
+      // sort by price ascending, keep all (no aggressive min/max filter so categories don't disappear)
+      const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
       if (!list.length) continue;
       const cheapest = list[0];
-
-      const cheapestSlug = slugify(cheapest.name);
 
       const card = document.createElement('div');
       card.className='card';
       card.innerHTML = `
-        <h3><span style="color:var(--brand)">[DropSource]</span> <span class="muted">—</span> <span style="color:#cdd7ff">${escapeHtml(type)}</span></h3>
-        <div class="muted">${escapeHtml(plat)}</div>
+        <h3>
+          <span class="brand" style="color:var(--brand);font-weight:700">DropSource</span>
+          <span class="muted">·</span>
+          <span style="color:#cdd7ff">${escapeHtml(plat)}</span>
+          <span class="muted">/</span>
+          <span style="color:#cdd7ff">${escapeHtml(type)}</span>
+        </h3>
         <div class="row">
-          <span class="chip s gray">Min ${cheapest.min}</span>
-          <span class="chip s gray">Max ${cheapest.max}</span>
-          ${cheapest.dripfeed?'<span class="chip s purple">Dripfeed</span>':''}
-          ${cheapest.refill?'<span class="chip s green">Refill</span>':''}
+          <span class="chip s gray">Min ${formatK(cheapest.min)}</span>
+          <span class="chip s gray">Max ${formatK(cheapest.max)}</span>
+          ${/drip/i.test(cheapest.name)?'<span class="chip s purple">Dripfeed</span>':''}
+          ${/refill/i.test(cheapest.name)?'<span class="chip s green">Refill</span>':''}
         </div>
         <div class="row" style="justify-content:space-between;align-items:center">
           <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
           <div class="row">
             <button class="btn"
-    onclick="orderClick(this)"
-    data-id="${cheapest.id}"
-    data-min="${cheapest.min}"
-    data-max="${cheapest.max}"
-    data-price="${cheapest.price_per_1k}"
-    data-name="${escapeHtml(type)}"
-    data-title="${escapeHtml(cheapest.name)}"
-    data-plat="${escapeHtml(plat)}"
-    data-type="${escapeHtml(type)}"
-    data-slug="${escapeHtml(cheapestSlug)}"
-  >Order cheapest</button>
+              onclick="orderClick(this)"
+              data-id="${cheapest.id}"
+              data-plat="${escapeHtml(plat)}"
+              data-type="${escapeHtml(type)}"
+              data-rate="${cheapest.price_per_1k}"
+              data-min="${cheapest.min}"
+              data-max="${cheapest.max}"
+              data-title="${escapeHtml(cheapest.name)}"
+              data-name="${escapeHtml(type)}"
+              data-slug="${slugify(`${plat} ${type}`)}"
+            >Order cheapest</button>
             <button class="btn" data-expand>View variants</button>
           </div>
         </div>
@@ -274,76 +246,51 @@ async function load(){
       const vWrap = det.querySelector('div');
 
       for(const svc of list){
-        const svcSlug = slugify(svc.name);
-        const tags = makeTags(svc.name);
+        const {label, chips} = summarizeVariant(svc, plat, type);
         const row = document.createElement('div');
         row.className='variant';
         row.innerHTML = `
-          <div class="row">
-            ${tags.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
+          <div class="row" style="gap:6px;align-items:baseline">
+            <div style="font-size:13px;color:#d7e2f0">${escapeHtml(label)}</div>
+            ${chips.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
           </div>
           <div class="row">
             <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
             <button class="btn"
-    onclick="orderClick(this)"
-    data-id="${svc.id}"
-    data-min="${svc.min}"
-    data-max="${svc.max}"
-    data-price="${svc.price_per_1k}"
-    data-name="${escapeHtml(type)}"
-    data-title="${escapeHtml(svc.name)}"
-    data-plat="${escapeHtml(plat)}"
-    data-type="${escapeHtml(type)}"
-    data-slug="${escapeHtml(svcSlug)}"
-  >Order</button>
+              onclick="orderClick(this)"
+              data-id="${svc.id}"
+              data-plat="${escapeHtml(plat)}"
+              data-type="${escapeHtml(type)}"
+              data-rate="${svc.price_per_1k}"
+              data-min="${svc.min}"
+              data-max="${svc.max}"
+              data-title="${escapeHtml(svc.name)}"
+              data-name="${escapeHtml(type)}"
+              data-slug="${slugify(`${plat} ${type}`)}"
+            >Order</button>
           </div>`;
         vWrap.appendChild(row);
       }
       card.appendChild(det);
       card.querySelector('[data-expand]').onclick=()=>det.open=!det.open;
-
       grid.appendChild(card);
     }
-
     elWrap.appendChild(sec);
   }
 }
 
 function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
-function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||'' }
-function slugify(x){
-  return String(x||'')
-    .toLowerCase()
-    .normalize('NFKD')               // strip accents
-    .replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^a-z0-9]+/g,'-')      // non-word to hyphen
-    .replace(/(^-|-$)/g,'');         // trim hyphens
-}
 
-async function placeOrder(serviceId, link, quantity, runs, interval){
-  const res = await fetch(API, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ action:'add', service: serviceId, link, quantity, runs, interval })
-  });
-  return res.json();
-}
-
+// --- order redirect ----------------------------------------------------------
 function orderClick(btn){
-  // Redirect to purchase with robust prefill info.
-  const params = new URLSearchParams({
-    id: btn.dataset.id || '',
-    slug: btn.dataset.slug || '',
-    name: btn.dataset.title || btn.dataset.name || '',
-    plat: btn.dataset.plat || '',
-    type: btn.dataset.type || '',
-    rate: btn.dataset.price || '',
-    min: btn.dataset.min || '',
-    max: btn.dataset.max || '',
-    link: '' // left blank; user pastes target on purchase screen
+  const d = btn.dataset;
+  const qs = new URLSearchParams({
+    id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
+    rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
   });
-  location.href = `/purchase.html?${params.toString()}`;
+  location.href = `/purchase.html?${qs.toString()}`;
 }
+
+// kick off
 load();
 </script>
-</body>
-</html>
