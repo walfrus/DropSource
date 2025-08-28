@@ -1,0 +1,4 @@
+Error: page.evaluate: ReferenceError: __name is not defined
+    at eval (eval at evaluate (:291:30), <anonymous>:1:23)
+    at UtilityScript.evaluate (<anonymous>:293:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)

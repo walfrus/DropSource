@@ -14,8 +14,9 @@
     PLAYWRIGHT_PROFILE_DIR -> optional dir to store a persistent session (default .playwright/smmgoal)
 */
 import { chromium } from 'playwright';
-import type { Page } from 'playwright';
-import { writeFile } from 'node:fs/promises';
+import type { Page, Locator } from 'playwright';
+import { writeFile, mkdir } from 'node:fs/promises';
+import * as path from 'node:path';
 
 // --- Types -----------------------------------------------------------------
 export type Svc = {
@@ -30,6 +31,65 @@ export type Svc = {
   remote_id?: string; // the panel service id, when we can detect it
 };
 
+// --- Output & timebox ------------------------------------------------------
+const OUT_FILE = process.env.OUT_FILE || './smmgoals.services.json';
+const TIMEBOX_MS = (() => { const n = Number(process.env.TIMEBOX_MS || 0); return Number.isFinite(n) && n > 0 ? n : 240_000; })();
+
+async function writeOut(raw: Svc[]) {
+  // Normalize, apply markup, and de-dup by lowest rate per 1k
+  const services: Svc[] = raw
+    .filter((s) => s.rate_per_1k_cents > 0 && s.name)
+    .map((s) => ({
+      ...s,
+      our_price_cents: Math.max(
+        1,
+        Math.round(
+          s.rate_per_1k_cents *
+            (parseFloat(process.env.MARKUP || '1.20') || 1.2)
+        )
+      ),
+    }))
+    .reduce((acc: Svc[], cur) => {
+      const existing = acc.find((x) => x.code === cur.code);
+      if (!existing) acc.push(cur);
+      else if (cur.rate_per_1k_cents < existing.rate_per_1k_cents)
+        Object.assign(existing, cur);
+      return acc;
+    }, []);
+
+  // Ensure directory exists
+  await mkdir(path.dirname(OUT_FILE), { recursive: true }).catch(() => {});
+
+  // JSON output (unchanged structure)
+  await writeFile(OUT_FILE, JSON.stringify(services, null, 2));
+
+  // CSV output with your requested order/columns
+  const outCsv =
+    OUT_FILE.endsWith('.json')
+      ? OUT_FILE.replace(/\.json$/i, '.csv')
+      : OUT_FILE + '.csv';
+
+  const toCsvRow = (fields: (string | number)[]) =>
+    fields
+      .map((f) => `"${String(f).replace(/"/g, '""')}"`)
+      .join(',');
+
+  const header = toCsvRow(['name', 'rate_per_1k_usd', 'min', 'max']);
+  const rows = services.map((s) =>
+    toCsvRow([
+      s.name,
+      (s.rate_per_1k_cents / 100).toFixed(2),
+      s.min,
+      s.max,
+    ])
+  );
+  await writeFile(outCsv, [header, ...rows].join('\n'));
+
+  console.log(
+    `[scrape] Wrote ${services.length} services → ${OUT_FILE} and ${outCsv}`
+  );
+}
+
 // --- Helpers ---------------------------------------------------------------
 const slug = (s: string) => s
   .toLowerCase()
@@ -43,13 +103,32 @@ const toInt = (s: string | number | null | undefined) => {
   return v ? parseInt(v, 10) : 0;
 };
 
-// Price extractor: `$12.34 / 1k`, `$12 / 1000`, or first money amount
+// Helper: Try selectors in order, return first non-empty textContent
+async function cellText(row: Locator, selectors: string[]): Promise<string> {
+  for (const sel of selectors) {
+    const loc = row.locator(sel).first();
+    try {
+      if (await loc.count()) {
+        const raw = await loc.textContent();
+        const t = (raw ?? '').trim();
+        if (t) return t;
+      }
+    } catch {}
+  }
+  return '';
+}
+
+// Price extractor: `$12.34 / 1k`, `$12 / 1000`, or first money amount, also accepts bare numbers and "USD"
 function extractPricePer1kCents(text: string): number {
-  const t = text.toLowerCase();
+  const t = String(text || '').toLowerCase();
   let m = t.match(/([$€£])?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)?\s*(?:1k|1000)\b/);
   if (m) return parseCents(m[2]);
-  m = t.match(/([$€£])\s*([0-9]+(?:\.[0-9]+)?)/); // first money amount as fallback
-  return m ? parseCents(m[2]) : 0;
+  m = t.match(/\b([0-9]+(?:\.[0-9]+)?)\s*usd\b/);
+  if (m) return parseCents(m[1]);
+  m = t.match(/([$€£])\s*([0-9]+(?:\.[0-9]+)?)/);
+  if (m) return parseCents(m[2]);
+  m = t.match(/\b([0-9]+(?:\.[0-9]+)?)\b/); // bare number (assume per 1k)
+  return m ? parseCents(m[1]) : 0;
 }
 
 function extractMinMax(text: string): { min: number; max: number } {
@@ -77,7 +156,7 @@ async function ensureLoggedIn(page: Page) {
     await page.goto(`${process.env.SMMGOAL_BASE?.replace(/\/$/, '') || 'https://smmgoal.com'}/services`, { waitUntil: WAIT_UNTIL, timeout: 30_000 });
     // If there's no password field visible, assume we're in
     const hasPass = await page.locator('input[type="password"], input[name="password" i], #password').first().count();
-    if (!hasPass) return;
+    if (!hasPass) { console.log('[scrape] already logged in (no password field)'); return; }
   } catch {}
 
   const BASE = process.env.SMMGOAL_BASE?.replace(/\/$/, '') || 'https://smmgoal.com';
@@ -131,62 +210,83 @@ async function ensureLoggedIn(page: Page) {
 async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string): Promise<Svc[]> {
   const services: Svc[] = [];
 
-  // Prefer a real table structure
-  let rows = page.locator('table tbody tr');
-  let useTable = await rows.count() > 5; // heuristic
+  // Try to detect table rows first
+  let rows = page.locator('table tbody tr:has(td)');
+  let useTable = await rows.count() >= 3;
 
   if (!useTable) {
-    // Fallback to common row-like containers
-    rows = page.locator('tr, .table-row, .service-row, .row');
+    rows = page.locator('table tr:has(td), .service-row, .services-row, .services-list .row, .pricing-table tr');
   }
 
-  // Track current category by scanning for obvious header rows (spanning & bold)
   let currentCategory = categoryHint || '';
-
   const rowCount = await rows.count();
+  console.log(`[parse] rows on page: ${rowCount} (useTable=${useTable})`);
+
+  // If the table has headers, map them to indexes so we can pick the right columns regardless of order.
+  let headerMap: Record<string, number> = {};
+  try {
+    const heads = await page.locator('table thead th').allTextContents();
+    heads.forEach((h, i) => {
+      const k = h.trim().toLowerCase();
+      if (!k) return;
+      if (k.includes('service') || k.includes('name')) headerMap.service = i + 1; // nth-child is 1-based
+      if (k.includes('rate') || k.includes('price')) headerMap.price = i + 1;
+      if (k.includes('min')) headerMap.min = i + 1;
+      if (k.includes('max')) headerMap.max = i + 1;
+      if (k.includes('id')) headerMap.id = i + 1;
+    });
+  } catch {}
+
   for (let i = 0; i < rowCount; i++) {
     const row = rows.nth(i);
     const rowText = (await row.textContent().catch(() => '')) || '';
 
-    // Update category if the row looks like a section header
-    if (/instagram|facebook|tiktok|twitter|youtube|soundcloud|spotify/i.test(rowText) && rowText.length < 120 && !rowText.includes('$')) {
+    // Update category if the row looks like a header-only line
+    if (/instagram|facebook|tiktok|twitter|youtube|soundcloud|spotify|discord|whatsapp|reddit|linkedin|telegram/i.test(rowText) && rowText.length < 160 && !/\$|\d\s*\/\s*1k/i.test(rowText)) {
       currentCategory = slug(rowText.trim());
     }
 
-    // Try as a table first
-    let id = (await row.locator('td:nth-child(1)').first().textContent().catch(() => ''))?.trim() || '';
-    let name = (await row.locator('td:nth-child(2)').first().textContent().catch(() => ''))?.trim() || '';
-    let priceStr = (await row.locator('td:nth-child(3)').first().textContent().catch(() => ''))?.trim() || '';
-    let minStr = (await row.locator('td:nth-child(4)').first().textContent().catch(() => ''))?.trim() || '';
-    let maxStr = (await row.locator('td:nth-child(5)').first().textContent().catch(() => ''))?.trim() || '';
+    // Flexible cell resolution (tries data-label/data-title first, then header-mapped nth-child, then generic positions)
+    const id = await cellText(row, [
+      'td[data-label*="id" i]', 'td[data-title*="id" i]',
+      headerMap.id ? `td:nth-child(${headerMap.id})` : 'td:nth-child(1)'
+    ]);
 
-    // If this doesn't look like a table row, try a generic card
-    if (!name || name.length < 2) {
-      const nameAlt = (await row.locator('h1, h2, h3, .title, .name, .service-title').first().textContent().catch(() => ''))?.trim();
-      if (!nameAlt) continue;
-      name = nameAlt;
-      const block = rowText;
-      const ratePer1kCents = extractPricePer1kCents(block);
-      if (!ratePer1kCents) continue;
-      const { min, max } = extractMinMax(block);
-      const code = slug(`${currentCategory || 'misc'}_${name}`);
-      services.push({
-        provider: 'smmgoals',
-        code,
-        name,
-        rate_per_1k_cents: ratePer1kCents,
-        min,
-        max,
-        category: currentCategory || 'misc'
-      });
-      continue;
+    const name = await cellText(row, [
+      'td[data-label*="service" i]', 'td[data-title*="service" i]', 'td .service-title', 'td .title',
+      headerMap.service ? `td:nth-child(${headerMap.service})` : 'td:nth-child(2)'
+    ]);
+    if (!name) continue; // skip non-service rows
+
+    const priceStr = await cellText(row, [
+      'td[data-label*="rate" i]', 'td[data-label*="price" i]', 'td[data-title*="rate" i]', 'td[data-title*="price" i]', 'td:has-text("$")',
+      headerMap.price ? `td:nth-child(${headerMap.price})` : 'td:nth-child(3)'
+    ]);
+
+    const minStr = await cellText(row, [
+      'td[data-label*="min" i]', 'td[data-title*="min" i]',
+      headerMap.min ? `td:nth-child(${headerMap.min})` : 'td:nth-child(4)'
+    ]);
+
+    const maxStr = await cellText(row, [
+      'td[data-label*="max" i]', 'td[data-title*="max" i]',
+      headerMap.max ? `td:nth-child(${headerMap.max})` : 'td:nth-child(5)'
+    ]);
+
+    // Price parsing: accept "$x / 1k", "$x", or bare numbers (many panels show rate per 1k without currency)
+    let ratePer1kCents = extractPricePer1kCents(priceStr);
+    if (!ratePer1kCents) ratePer1kCents = parseCents(priceStr);
+
+    // If still zero, try to sniff a bare number from any cell that looks price-ish
+    if (!ratePer1kCents) {
+      const alt = await cellText(row, ['td:has-text("/ 1k")', 'td:has-text("1k")', 'td:has-text("1000")']);
+      if (alt) ratePer1kCents = extractPricePer1kCents(alt) || parseCents(alt);
     }
 
-    // Parse the more structured table-style row
-    const ratePer1kCents = extractPricePer1kCents(priceStr) || parseCents(priceStr);
-    const min = toInt(minStr);
-    const max = toInt(maxStr);
-    if (!ratePer1kCents || !name) continue;
+    if (!ratePer1kCents) continue;
+
+    const min = toInt(minStr) || extractMinMax(rowText).min;
+    const max = toInt(maxStr) || extractMinMax(rowText).max;
 
     const code = slug(`${currentCategory || 'misc'}_${name}`);
     services.push({
@@ -202,6 +302,95 @@ async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string):
   }
 
   return services;
+}
+
+async function fallbackScrape(page: Page, categoryHint?: string): Promise<Svc[]> {
+  // Use a raw function string to avoid esbuild/tsx injecting __name helpers in the browser context.
+  const browserFnSource = `
+    (function(catHint){
+      const slug = (s) => String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      const toInt = (s) => {
+        const v = String(s || '').replace(/[^0-9]/g, '');
+        return v ? parseInt(v, 10) : 0;
+      };
+
+      const extractPrice = (s) => {
+        const t = String(s || '').toLowerCase();
+        let m = t.match(/([0-9]+(?:\\.[0-9]+)?)\\s*(?:\\/|per)?\\s*(?:1k|1000)\\b/);
+        if (m) return Math.round(parseFloat(m[1]) * 100);
+        m = t.match(/([$€£])\\s*([0-9]+(?:\\.[0-9]+)?)/);
+        if (m) return Math.round(parseFloat(m[2]) * 100);
+        m = t.match(/\\b([0-9]+(?:\\.[0-9]+)?)\\b/);
+        return m ? Math.round(parseFloat(m[1]) * 100) : 0;
+      };
+
+      const out = [];
+      const tables = Array.from(document.querySelectorAll('table'));
+      for (const table of tables) {
+        const heads = Array.from(table.querySelectorAll('thead th'))
+          .map(th => (th.textContent || '').trim().toLowerCase());
+
+        const idx = {
+          id: (heads.findIndex(h => /\\bid\\b/.test(h)) + 1) || 1,
+          name: (heads.findIndex(h => /(service|name)/.test(h)) + 1) || 2,
+          price: (heads.findIndex(h => /(rate|price)/.test(h)) + 1) || 3,
+          min: (heads.findIndex(h => /min/.test(h)) + 1) || 4,
+          max: (heads.findIndex(h => /max/.test(h)) + 1) || 5,
+        };
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        for (const tr of rows) {
+          const td = (n) => {
+            const el = tr.querySelector(\`td:nth-child(\${n})\`);
+            // prefer innerText to mimic what you see; fallback to textContent
+            return (el && (el.innerText || el.textContent) || '').trim();
+          };
+
+          const name = td(idx.name) ||
+            ((tr.querySelector('td[data-label*="service" i]') || {}).innerText || '').trim() ||
+            ((tr.querySelector('td[data-title*="service" i]') || {}).innerText || '').trim();
+
+          if (!name) continue;
+
+          const priceStr = td(idx.price) ||
+            ((tr.querySelector('td[data-label*="rate" i], td[data-label*="price" i]') || {}).innerText || '').trim() ||
+            ((tr.querySelector('td[data-title*="rate" i], td[data-title*="price" i]') || {}).innerText || '').trim();
+
+          const price = extractPrice(priceStr);
+          if (!price) continue;
+
+          const min = toInt(td(idx.min) ||
+            ((tr.querySelector('td[data-label*="min" i]') || {}).innerText || '') ||
+            ((tr.querySelector('td[data-title*="min" i]') || {}).innerText || '')) || 100;
+
+          const max = toInt(td(idx.max) ||
+            ((tr.querySelector('td[data-label*="max" i]') || {}).innerText || '') ||
+            ((tr.querySelector('td[data-title*="max" i]') || {}).innerText || '')) || 100000;
+
+          out.push({
+            provider: 'smmgoals',
+            code: \`\${slug(catHint || 'services')}_\${slug(name)}\`,
+            name,
+            rate_per_1k_cents: price,
+            min,
+            max,
+            category: slug(catHint || 'services')
+          });
+        }
+      }
+      return out;
+    })
+  `;
+
+  // Build a real Function so Playwright serializes a clean function without esbuild helpers.
+  const browserFn = new Function('catHint', `return (${browserFnSource})(catHint);`) as (catHint?: string) => any;
+
+  const items = await page.evaluate(browserFn, categoryHint);
+  return items as unknown as Svc[];
 }
 
 (async () => {
@@ -225,13 +414,26 @@ async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string):
   const page = await context.newPage();
   page.on('console', (m) => console.log('[page]', m.type(), m.text()));
 
+  let timebox: NodeJS.Timeout | null = setTimeout(async () => {
+    console.warn('[scrape] TIMEBOX hit — writing whatever we collected so far');
+    try { await writeOut(out); } catch {}
+    try { await context.close(); } catch {}
+    process.exit(0);
+  }, TIMEBOX_MS);
+  const clearBox = () => { if (timebox) { clearTimeout(timebox); timebox = null; } };
+
   try {
     await ensureLoggedIn(page);
+    console.log('[scrape] login step done');
 
     for (const url of urls) {
       console.log('[scrape] Visiting', url);
       await page.goto(url, { waitUntil: WAIT_UNTIL, timeout: 60_000 });
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+      const rcTable = await page.locator('table tbody tr:has(td)').count().catch(()=>0);
+      const rcCustom = await page.locator('.service-row, .services-list .row').count().catch(()=>0);
+      console.log(`[scrape] initial row candidates: table=${rcTable} custom=${rcCustom}`);
 
       // Try to ensure some service DOM is present; if not, take a debug shot
       await page.locator('table, .service-row, tr').first().waitFor({ timeout: 15_000 }).catch(() => {});
@@ -247,34 +449,37 @@ async function scrapeServicesFromCurrentPage(page: Page, categoryHint?: string):
       const catTitle = (await page.locator('h1, h2, .category-title, title').first().textContent().catch(() => ''))?.trim() || 'services';
       const category = slug(catTitle) || 'services';
 
-      const batch = await scrapeServicesFromCurrentPage(page, category);
-      console.log(`[scrape] Found ${batch.length} services on this page`);
-      out.push(...batch);
+      let got: Svc[] = [];
+      // FAST PATH: if the table is huge, use the in-page parser to avoid thousands of roundtrips
+      if (rcTable >= 800 || rcCustom >= 800) {
+        console.log('[scrape] Large table detected — switching to fast in-page parser');
+        got = await fallbackScrape(page, category);
+      } else {
+        const batch = await scrapeServicesFromCurrentPage(page, category);
+        got = batch;
+        if (!got.length) {
+          console.log('[scrape] Primary parser found 0 services — trying fallback parser');
+          got = await fallbackScrape(page, category);
+        }
+      }
+
+      console.log(`[scrape] Found ${got.length} services on this page`);
+      if (!got.length) {
+        await page.screenshot({ path: `.playwright/no-services-${Date.now()}.png`, fullPage: true }).catch(()=>{});
+        console.log('[scrape] WARN: 0 services parsed on this page, wrote a debug screenshot.');
+      }
+      out.push(...got);
     }
   } finally {
     await context.close();
   }
 
-  const services: Svc[] = out
-    .filter((s) => s.rate_per_1k_cents > 0 && s.name)
-    .map((s) => ({
-      ...s,
-      our_price_cents: Math.max(1, Math.round(s.rate_per_1k_cents * MARKUP)),
-    }))
-    // de-dupe by code, keeping the cheapest rate we observed
-    .reduce((acc: Svc[], cur) => {
-      const existing = acc.find((x) => x.code === cur.code);
-      if (!existing) acc.push(cur);
-      else if (cur.rate_per_1k_cents < existing.rate_per_1k_cents) {
-        Object.assign(existing, cur);
-      }
-      return acc;
-    }, []);
-
-  await writeFile('./smmgoals.services.json', JSON.stringify(services, null, 2));
-  console.log(`[scrape] Wrote ${services.length} services to smmgoals.services.json`);
+  await writeOut(out);
+  clearBox();
 })().catch(async (err) => {
   console.error('[scrape] Failed:', err);
+  try { await mkdir(path.dirname(OUT_FILE), { recursive: true }); } catch {}
   try { await writeFile('.playwright/error.txt', String(err)); } catch {}
+  try { await writeFile(OUT_FILE, JSON.stringify([], null, 2)); } catch {}
   process.exitCode = 1;
 });

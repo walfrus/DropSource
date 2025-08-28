@@ -35,37 +35,49 @@
   </div>
 
   <div class="card">
-    <label>Service</label>
-    <select id="svc">
-      <option value="ig_followers">Instagram Followers</option>
-      <option value="yt_views">YouTube Views</option>
-    </select>
+      <label>Service</label>
+      <select id="svc"></select>
 
-    <label>Target URL</label>
-    <input id="url" placeholder="https://example.com/..." />
-
-    <div class="row">
-      <div>
-        <label>Quantity</label>
-        <input id="qty" type="number" value="100" min="1" />
+      <div class="row">
+        <div>
+          <label>Category</label>
+          <input id="cat" placeholder="instagram" />
+        </div>
+        <div>
+          <label>Rate / 1k (USD)</label>
+          <input id="rate" disabled />
+        </div>
       </div>
-      <div>
-        <label>Estimated Cost</label>
-        <input id="est" disabled />
+
+      <label>Target URL</label>
+      <input id="url" placeholder="https://example.com/..." />
+
+      <div class="row">
+        <div>
+          <label>Quantity</label>
+          <input id="qty" type="number" value="100" min="1" />
+        </div>
+        <div>
+          <label>Estimated Cost</label>
+          <input id="est" disabled />
+        </div>
       </div>
-    </div>
 
-    <div class="row" style="margin-top:12px">
-      <button id="create">Create Order</button>
-      <button id="add5">+ $5 via Square</button>
-    </div>
+      <div class="row" style="margin-top:12px">
+        <button id="create">Create Order</button>
+        <button id="add5">+ $5 via Square</button>
+      </div>
 
-    <p id="msg" class="muted"></p>
+      <p id="msg" class="muted"></p>
   </div>
 
 <script>
 const BASE = location.origin;
 const $ = (id)=>document.getElementById(id);
+
+// --- helpers ---
+function cents(n){ return `$${(n/100).toFixed(2)}`; }
+function params(){ return Object.fromEntries(new URLSearchParams(location.search)); }
 
 async function api(path, opts={}, headers={}) {
   const uid = $('uid').value.trim();
@@ -80,7 +92,67 @@ async function api(path, opts={}, headers={}) {
   try { return { ok:r.ok, json: JSON.parse(t) }; } catch { return { ok:r.ok, text:t }; }
 }
 
-function cents(n){ return `$${(n/100).toFixed(2)}`; }
+// --- CSV loading ---
+// CSV columns (exact): name,rate_per_1k_usd,min,max
+let catalog = [];
+let byName = new Map();
+
+async function loadCSV() {
+  const r = await fetch('/smmgoals.services.csv', { cache:'no-store' });
+  const text = await r.text();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const [h, ...rows] = lines;
+  const headers = h.split(',').map(s => s.replace(/^"|"$/g,'').trim().toLowerCase());
+  const idx = {
+    name: headers.indexOf('name'),
+    rate: headers.indexOf('rate_per_1k_usd'),
+    min: headers.indexOf('min'),
+    max: headers.indexOf('max'),
+  };
+
+  catalog = rows.map((line) => {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let i=0;i<line.length;i++){
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i+1] === '"') { cur+='"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === ',' && !inQ) {
+        cols.push(cur); cur='';
+      } else cur += ch;
+    }
+    cols.push(cur);
+    const name = (cols[idx.name]||'').replace(/^"|"$/g,'');
+    const rate = parseFloat((cols[idx.rate]||'0').replace(/"/g,'')) || 0;
+    const min = parseInt((cols[idx.min]||'0').replace(/"/g,''),10) || 0;
+    const max = parseInt((cols[idx.max]||'0').replace(/"/g,''),10) || 0;
+    return { name, rate, min, max };
+  }).filter(x => x.name && x.rate > 0);
+
+  byName = new Map(catalog.map(x => [x.name.toLowerCase(), x]));
+
+  // fill dropdown
+  const el = $('svc');
+  el.innerHTML = '';
+  for (const s of catalog) {
+    const opt = document.createElement('option');
+    opt.value = s.name;
+    opt.textContent = s.name;
+    el.appendChild(opt);
+  }
+}
+
+function updateFromSelection() {
+  const name = $('svc').value;
+  const rec = byName.get(name.toLowerCase());
+  if (!rec) return;
+  $('rate').value = `$${rec.rate.toFixed(2)} / 1k`;
+  $('qty').min = Math.max(1, rec.min || 1);
+  $('qty').max = rec.max || 1000000;
+  $('qty').value = Math.max(parseInt($('qty').value || '0', 10) || rec.min || 1, rec.min || 1);
+  estimate();
+}
 
 async function refreshBalance() {
   const r = await api(`${BASE}/api/wallet/get`);
@@ -91,36 +163,60 @@ async function refreshBalance() {
   }
 }
 
-async function estimate() {
-  // quick client estimate by fetching service price
-  const svc = $('svc').value;
+function estimate() {
+  const name = $('svc').value;
+  const rec = byName.get((name||'').toLowerCase());
   const qty = Number($('qty').value || 0);
-  // simple static mapping; you can fetch from API instead
-  const price = { ig_followers: 100, yt_views: 50 }[svc] || 0; // cents per unit
-  $('est').value = cents(price * qty);
+  const pricePerUnitCents = rec ? Math.round(rec.rate * 100 / 1000) : 0; // rate is per 1k USD → cents per 1
+  $('est').value = cents(pricePerUnitCents * qty);
 }
-$('qty').addEventListener('input', estimate);
-$('svc').addEventListener('change', estimate);
-estimate();
 
+// Try to resolve a provider service id by name using your live /api/smm listings
+async function resolveServiceIdByName(name) {
+  const q = encodeURIComponent(name);
+  const r = await api(`${BASE}/api/smm?action=services&q=${q}`);
+  const list = Array.isArray(r.json) ? r.json : [];
+  if (!list.length) return null;
+  // naive best-match by case-insensitive substring, prefer cheapest
+  const needle = name.toLowerCase();
+  const candidates = list
+    .filter(s => String(s.name||'').toLowerCase().includes(needle))
+    .sort((a,b) => (a.price_per_1k||Infinity) - (b.price_per_1k||Infinity));
+  return (candidates[0] && candidates[0].id) || list[0].id || null;
+}
+
+// hook up UI
 $('chk').onclick = refreshBalance;
+$('svc').addEventListener('change', updateFromSelection);
+$('qty').addEventListener('input', estimate);
 
 $('create').onclick = async () => {
+  $('msg').className = 'muted';
+  $('msg').textContent = 'Resolving service...';
+  const name = $('svc').value;
+  const target = $('url').value.trim();
+  const qty = Number($('qty').value || 0);
+  if (!target) { $('msg').textContent = '❌ Enter a target URL'; $('msg').className = 'err'; return; }
+  if (!name || !byName.has(name.toLowerCase())) { $('msg').textContent = '❌ Pick a service'; $('msg').className = 'err'; return; }
+
+  const serviceId = await resolveServiceIdByName(name);
+  if (!serviceId) { $('msg').textContent = '❌ Could not match this service to provider'; $('msg').className = 'err'; return; }
+
   $('msg').textContent = 'Placing order...';
-  const body = {
-    service_code: $('svc').value,
-    target_url: $('url').value.trim(),
-    quantity: Number($('qty').value || 0)
-  };
-  const r = await api(`${BASE}/api/orders/create`, { method:'POST', body: JSON.stringify(body) });
-  if (r.ok && r.json?.ok) {
-    $('msg').textContent = `✅ Order ${r.json.order_id} queued. New balance ${cents(r.json.new_balance_cents)}.`;
+
+  const r = await api(`${BASE}/api/smm`, {
+    method:'POST',
+    body: JSON.stringify({ action:'add', service: serviceId, link: target, quantity: qty })
+  });
+
+  if (r.ok && r.json && r.json.order) {
     $('msg').className = 'ok';
+    $('msg').textContent = `✅ Order ${r.json.order} placed.`;
     refreshBalance();
   } else {
     const err = r.json?.error || r.text || 'error';
-    $('msg').textContent = `❌ ${err}`;
     $('msg').className = 'err';
+    $('msg').textContent = `❌ ${err}`;
   }
 };
 
@@ -137,6 +233,19 @@ $('add5').onclick = async () => {
     $('msg').textContent = 'Could not create link';
   }
 };
+
+// init
+(async function init(){
+  await loadCSV();
+  const qp = params();
+  // If arriving from a card link with ?name=...&min=...&max=...&rate=...
+  if (qp.name && byName.has(qp.name.toLowerCase())) {
+    $('svc').value = qp.name;
+  }
+  updateFromSelection();
+  // Pre-fill target URL if supplied
+  if (qp.link) $('url').value = qp.link;
+})();
 </script>
 </body>
 </html>
