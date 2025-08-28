@@ -16,8 +16,9 @@ function text(res: any, code: number, t: string) {
 }
 
 function supabaseAdmin() {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const url = process.env.SUPABASE_URL || '';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url || !key) return null as any;
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
@@ -39,6 +40,10 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return text(res, 200, 'ok');
 
   const sb = supabaseAdmin();
+  if (!sb) {
+    try { await logWebhook({ from: 'no_sb' }, 'missing_env', 500, { hasUrl: !!process.env.SUPABASE_URL, hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY }); } catch {}
+    return json(res, 500, { error: 'server_misconfigured' });
+  }
   const debugNoVerify = String(req.headers['x-debug-no-verify'] || '') === '1';
   const debugReturnError = String(req.headers['x-debug-return-error'] || '') === '1';
 
@@ -76,10 +81,16 @@ export default async function handler(req: any, res: any) {
       return text(res, 200, 'ok');
     }
 
-    // 3) Find matching deposit by provider_id
-    const { data: dep, error: depErr } = await sb.from('deposits').select('*').eq('provider_id', providerKey).single();
-    if (depErr || !dep) {
-      await logWebhook(sb, 'deposit_not_found', 200, { providerKey, type });
+    // 3) Find matching deposit by provider_id (try linkId, orderId, paymentId)
+    const paymentId = String(payment?.id || '');
+    const candidates = Array.from(new Set([providerKey, linkId, orderId, paymentId].filter(Boolean)));
+    let dep: any = null;
+    for (const key of candidates) {
+      const { data } = await sb.from('deposits').select('*').eq('provider_id', key).single();
+      if (data) { dep = data; break; }
+    }
+    if (!dep) {
+      await logWebhook(sb, 'deposit_not_found', 200, { candidates, type, status });
       return text(res, 200, 'ok');
     }
 
@@ -98,14 +109,15 @@ export default async function handler(req: any, res: any) {
     const user_id = dep.user_id;
     const cents = Number(dep.amount_cents || amount || 0);
     if (user_id && cents > 0) {
-      // ensure wallet exists
+      // ensure user exists
       await sb.from('users').upsert({ id: user_id, email: null }).select('id').single();
-      const { data: w } = await sb.from('wallets').select('balance_cents').eq('user_id', user_id).single();
-      if (!w) {
-        await sb.from('wallets').insert({ user_id, balance_cents: 0, currency: 'usd' });
-      }
-      const { data: w2 } = await sb.from('wallets').select('balance_cents').eq('user_id', user_id).single();
-      const next = Number(w2?.balance_cents || 0) + cents;
+      // ensure wallet exists (no 409): onConflict user_id
+      await sb.from('wallets').upsert(
+        { user_id, balance_cents: 0, currency: 'usd' },
+        { onConflict: 'user_id' }
+      );
+      const { data: w3 } = await sb.from('wallets').select('balance_cents').eq('user_id', user_id).single();
+      const next = Number(w3?.balance_cents || 0) + cents;
       await sb.from('wallets').update({ balance_cents: next }).eq('user_id', user_id);
     }
 
