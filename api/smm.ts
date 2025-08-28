@@ -1,7 +1,15 @@
 // api/smm.ts — single endpoint for services / order / balance / status
-// No external types/imports needed
+// No external imports required
 
-export const config = { runtime: 'nodejs' };
+export const config = { runtime: 'nodejs18.x' };
+
+// ---- tiny response helper (avoid res.status().json in pure Node funcs) ----
+function sendJson(res: any, code: number, obj: any, headers: Record<string,string> = {}) {
+  res.statusCode = code;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  for (const [k,v] of Object.entries(headers)) res.setHeader(k, v);
+  res.end(JSON.stringify(obj));
+}
 
 // ---- env helpers ----
 function numFromEnv(name: string, def: number): number {
@@ -34,7 +42,7 @@ export default async function handler(req: any, res: any) {
     const url = new URL(req.url || '/', 'http://localhost');
 
     if (!PANEL_API_URL || !PANEL_API_KEY) {
-      return res.status(500).json({ error: "Missing PANEL_API_URL/SMM_API or PANEL_API_KEY/SMM_API_KEY" });
+      return sendJson(res, 500, { error: "Missing PANEL_API_URL/SMM_API or PANEL_API_KEY/SMM_API_KEY" });
     }
 
     if (req.method === "GET") {
@@ -56,26 +64,28 @@ export default async function handler(req: any, res: any) {
           );
 
         res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-        return res.status(200).json(services);
+        return sendJson(res, 200, services);
       }
 
       if (action === "balance") {
         const data = await callPanel({ action: "balance" });
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        return res.status(200).json(data);
+        return sendJson(res, 200, data, {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache'
+        });
       }
 
       if (action === "status") {
         const order = String(url.searchParams.get('order') || "");
-        if (!order) return res.status(400).json({ error: "Missing order id" });
+        if (!order) return sendJson(res, 400, { error: "Missing order id" });
         const data = await callPanel({ action: "status", order });
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        return res.status(200).json(data);
+        return sendJson(res, 200, data, {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache'
+        });
       }
 
-      return res.status(400).json({ error: "Unknown action" });
+      return sendJson(res, 400, { error: "Unknown action" });
     }
 
     if (req.method === "POST") {
@@ -87,26 +97,27 @@ export default async function handler(req: any, res: any) {
         const href = String(link || '').trim();
         const qty = Number(quantity);
         if (!svcId || !href || !Number.isFinite(qty) || qty <= 0) {
-          return res.status(400).json({ error: "Missing or invalid params" });
+          return sendJson(res, 400, { error: "Missing or invalid params" });
         }
         const payload: any = { action: "add", service: svcId, link: href, quantity: qty };
         if (runs) payload.runs = runs;
         if (interval) payload.interval = interval;
 
         const data = await callPanel(payload);
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        return res.status(200).json(data);
+        return sendJson(res, 200, data, {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache'
+        });
       }
 
-      return res.status(400).json({ error: "Unknown or missing action in POST" });
+      return sendJson(res, 400, { error: "Unknown or missing action in POST" });
     }
 
-    return res.status(405).json({ error: "Method not allowed" });
+    return sendJson(res, 405, { error: "Method not allowed" });
   } catch (err: any) {
-    // show something useful in Vercel logs
+    // log to Vercel function logs
     console.error("smm handler error:", err?.message || err, err?.stack);
-    return res.status(500).json({ error: "Server error", details: err?.message || String(err) });
+    return sendJson(res, 500, { error: "Server error", details: err?.message || String(err) });
   }
 }
 

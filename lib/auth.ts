@@ -7,18 +7,27 @@
 
 export function getUser(req: any): { id: string; email: string | null } | null {
   const hdr = (name: string): string => {
-    const h = (req?.headers ?? {}) as Record<string, string | string[] | undefined>;
-    const v = (h[name] ?? h[name.toLowerCase()] ?? h[name.toUpperCase()]) as string | string[] | undefined;
-    return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
+    const h = (req?.headers ?? {}) as Record<string, unknown>;
+    // normalize header key lookups across runtimes (mostly lowercase on Vercel)
+    const tryKeys = [name, name.toLowerCase(), name.toUpperCase()];
+    for (const k of tryKeys) {
+      const v = h[k];
+      if (v == null) continue;
+      if (Array.isArray(v)) return String(v[0] ?? '');
+      return String(v);
+    }
+    return '';
   };
 
   const q = (key: string): string => {
     // 1) Prefer framework-provided req.query (Next/Vercel, Express adapters)
     const qsrc = req?.query as Record<string, unknown> | undefined;
-    if (qsrc) {
-      const raw = (qsrc[key] ?? (typeof key === 'string' ? (qsrc[key.toLowerCase?.() as any] ?? '') : '')) as unknown;
-      const val = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '');
+    if (qsrc && typeof qsrc === 'object') {
+      const k = String(key);
+      const raw = (qsrc[k] ?? qsrc[k.toLowerCase()]) as unknown;
+      const val = Array.isArray(raw) ? (raw[0] as unknown) : raw;
       if (typeof val === 'string' && val) return val;
+      if (val != null) return String(val);
     }
     // 2) Fallback: parse from raw URL (pure Node runtimes)
     try {
@@ -44,7 +53,7 @@ export function getUser(req: any): { id: string; email: string | null } | null {
   };
 
   const cookiesFromHeader = parseCookieHeader(hdr('cookie'));
-  const cookiesFromRuntime = (req?.cookies && typeof req.cookies === 'object') ? req.cookies : {};
+  const cookiesFromRuntime = (req?.cookies && typeof req.cookies === 'object') ? (req.cookies as Record<string, string>) : {};
   const cookies: Record<string, string> = { ...cookiesFromHeader, ...cookiesFromRuntime };
 
   // optional combo header: x-user as JSON {"id":"...","email":"..."} OR "<id>:<email>" / "<id>|<email>"

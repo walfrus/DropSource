@@ -1,6 +1,7 @@
 // /api/_lib.ts
 
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
+import { URLSearchParams as NodeURLSearchParams } from 'node:url';
 export { crypto };
 
 // Normalize common "boolean" shapes from panels: true/false, 1/0, "1"/"0", "yes"/"no"
@@ -30,10 +31,11 @@ export async function callPanel(
   const key = process.env.SMM_API_KEY || process.env.PANEL_API_KEY || process.env.SMM_KEY || '';
   if (!url || !key) throw new Error('Missing SMM_API_URL/PANEL_API_URL or SMM_API_KEY/PANEL_API_KEY');
 
-  const body = new URLSearchParams({ key, action });
+  const body = new NodeURLSearchParams({ key, action });
   for (const [k, v] of Object.entries(extra)) body.append(k, String(v));
 
-  const r = await fetch(url, {
+  const fetchAny: any = (globalThis as any).fetch;
+  const r = await fetchAny(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -55,7 +57,7 @@ export async function callPanel(
       throw new Error(`panel ${r.status} ${r.statusText}: ${text.slice(0, 200)}`);
     }
     return json;
-  } catch (e) {
+  } catch {
     // not JSON; surface status + body
     if (!r.ok) throw new Error(text || `panel ${r.status}`);
     // if 200 but non-JSON, still throw so callers see the raw response
@@ -76,6 +78,13 @@ export function mapService(s: any) {
     .replace(/smmgoal/gi, 'DropSource')
     .replace(/\[(?:smmgoal|dropsource)\]\s*[—-]\s*/gi, '')
     .trim();
+
+  // infer flags
+  const drip = toBool(s.dripfeed ?? s.drip ?? false);
+  const refill = toBool(s.refill ?? s.refill_time ?? false);
+  const cancel = toBool(s.cancel ?? false);
+  const real = /real/i.test(String(s.description ?? s.note ?? '')) || /real/i.test(rawName);
+  const fast = /fast|instant|speed/i.test(rawName);
 
   // tags / flags inferred
   const tags: string[] = [];
@@ -105,13 +114,14 @@ export function mapService(s: any) {
     min,
     max,
     type: String(s.type ?? s.kind ?? 'Default'),
-    flags: {
-      dripfeed: toBool(s.dripfeed ?? s.drip ?? false),
-      refill: toBool(s.refill ?? s.refill_time ?? false),
-      cancel: toBool(s.cancel ?? false),
-      real: /real/i.test(String(s.description ?? s.note ?? '')) || /real/i.test(rawName),
-      fast: /fast|instant|speed/i.test(rawName),
-    },
+    // top-level flags for UI compatibility
+    dripfeed: drip,
+    refill,
+    cancel,
+    real,
+    fast,
+    // nested flags for structured consumers
+    flags: { dripfeed: drip, refill, cancel, real, fast },
     tags
   };
 }
@@ -139,7 +149,7 @@ export async function ensureUserAndWallet(sb: any, user: { id: string; email?: s
 export function readRawBody(req: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('data', (c: Buffer) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
