@@ -4,8 +4,6 @@
 
 import { sb } from '../../lib/db.js';
 
-export const config = { runtime: 'nodejs18.x' };
-
 // Local no-store helper to avoid import cycles / TS path issues
 function noStore(res: any) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
