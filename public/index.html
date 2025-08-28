@@ -1,322 +1,368 @@
-<script>
-// --- config & dom refs -------------------------------------------------------
-const API = '/api/smm';
-let elQ = document.getElementById('q');
-let elCat = document.getElementById('cat');
-let elWrap = document.getElementById('wrap');
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DropSource — Boosts</title>
+  <style>
+    :root{--bg:#0b0f16;--fg:#e6edf7;--muted:#9fb3c8;--chip:#1a2230;--brand:#8aa6ff;--card:#0f1520;--line:#1b2434;--btn:#1b2a45;--btn-fg:#e6edf7}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,Segoe UI,Helvetica,Arial,sans-serif}
+    header{position:sticky;top:0;background:#0d1421;border-bottom:1px solid var(--line);padding:10px 12px;z-index:5}
+    header .row{display:flex;align-items:center;gap:10px;max-width:1200px;margin:0 auto}
+    .brand{color:var(--brand);font-weight:800}
+    #toolbar{display:flex;gap:8px;max-width:1200px;margin:12px auto 0}
+    input,select,button{background:#0e1726;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+    input,select{flex:1;min-width:180px}
+    button{background:var(--btn);color:var(--btn-fg);cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;max-width:1200px;margin:12px auto}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{color:var(--muted)}
+    .chip{background:var(--chip);border:1px solid var(--line);padding:3px 8px;border-radius:999px}
+    .chip.s{font-size:12px}
+    .chip.green{background:#0d2a1a;border-color:#194d33}
+    .chip.purple{background:#1d1230;border-color:#3d2b7a}
+    .chip.blue{background:#0f2238;border-color:#224e8a}
+    .chip.gray{background:#121826;border-color:#1b2434}
+    .price{font-weight:700}
+    .section{border:1px solid var(--line);border-radius:16px;margin:12px auto;max-width:1200px;overflow:hidden}
+    .section .head{display:flex;justify-content:space-between;padding:10px 12px;background:linear-gradient(90deg,var(--line),transparent);cursor:pointer}
+    .section .body{display:none;padding:8px}
+    .section.open .body{display:block}
+    details{background:#0a1220;border:1px solid var(--line);border-radius:10px;padding:6px}
+    summary{cursor:pointer;user-select:none}
+    #wrap .loading{max-width:1200px;margin:30px auto;padding:16px;border:1px dashed var(--line);border-radius:12px}
+    #errorOverlay{position:fixed;inset:0;background:rgba(8,12,18,.92);color:#fff;display:none;align-items:center;justify-content:center;padding:24px;z-index:99}
+    #errorOverlay pre{max-width:1000px;white-space:pre-wrap;word-break:break-word;background:#111a2a;border:1px solid #2b3b55;padding:16px;border-radius:12px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <div class="brand">DropSource</div>
+      <div class="muted">Boosts marketplace</div>
+    </div>
+  </header>
 
-// Ensure the basic UI exists even if the HTML didn't include it (prevents blank page)
-(function ensureUI(){
-  if(!elWrap){
-    elWrap = document.createElement('div');
-    elWrap.id = 'wrap';
-    document.body.appendChild(elWrap);
-  }
-  if(!elQ || !elCat){
-    const bar = document.createElement('div');
-    bar.id = 'toolbar';
-    bar.style.margin = '12px auto';
-    bar.style.maxWidth = '1200px';
-    bar.style.display = 'flex';
-    bar.style.gap = '8px';
-    bar.innerHTML = `
-      <input id="q" placeholder="Search services…" style="flex:1;min-width:200px"/>
-      <select id="cat"><option value="">All platforms</option></select>
-      <button id="reload" class="btn small">Reload</button>
-      <button id="expandAll" class="btn small">Expand all</button>
-      <button id="collapseAll" class="btn small">Collapse all</button>
-    `;
-    document.body.prepend(bar);
-    elQ = bar.querySelector('#q');
-    elCat = bar.querySelector('#cat');
-  }
-  (document.getElementById('reload')||{}).onclick = load;
-  (document.getElementById('expandAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
-  (document.getElementById('collapseAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
-  if (elQ) elQ.oninput = load;
-  if (elCat) elCat.onchange = load;
-})();
+  <div id="toolbar">
+    <input id="q" placeholder="Search services…" />
+    <select id="cat"><option value="">All platforms</option></select>
+    <button id="reload">Reload</button>
+    <button id="expandAll">Expand all</button>
+    <button id="collapseAll">Collapse all</button>
+  </div>
 
-function showErr(m){ console.error(m); alert(m); }
+  <div id="wrap"><div class="loading">Loading services…</div></div>
+  <div id="errorOverlay"><pre id="errorText"></pre></div>
 
-// --- platform meta -----------------------------------------------------------
-const PLATFORM_COLORS = {
-  Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
-  TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
-  SoundCloud:'#FF5500', Threads:'#000000', VK:'#4C75A3', Twitch:'#9146FF',
-  Reddit:'#FF4500', Pinterest:'#E60023', LinkedIn:'#0A66C2', Snapchat:'#FFFC00',
-  Discord:'#5865F2', Shazam:'#0088FF', Vimeo:'#1AB7EA', Quora:'#B92B27',
-  Mixcloud:'#273A4B', 'OK.ru':'#F4731C', Audiomack:'#FFA200', Dailymotion:'#0066DC',
-  Reverbnation:'#000000', Tumblr:'#35465C', WhatsApp:'#25D366',
-  Website:'#59a0ff', Mobile:'#59a0ff', Crypto:'#f7931a', GeoTarget:'#59a0ff',
-  GoogleReviews:'#34a853', OwnWebsite:'#59a0ff', MaskedTraffic:'#59a0ff',
-  Podcast:'#ffa500', MassDM:'#59a0ff', Exchange:'#59a0ff', Other:'#59a0ff'
-};
-
-function detectPlatform(str=''){
-  const s = String(str).toLowerCase();
-  const map = [
-    ['Instagram',/(^|\b)(instagram|ig)\b/],
-    ['Telegram',/(^|\b)(telegram|tg)\b/],
-    ['Twitter',/(^|\b)twitter\b/],
-    ['X',/(^|\b)x\b(?![a-z])/],
-    ['TikTok',/(^|\b)(tiktok|tt)\b/],
-    ['Facebook',/(^|\b)(facebook|fb)\b/],
-    ['YouTube',/(^|\b)(youtube|yt|shorts)\b/],
-    ['Spotify',/spotify/],
-    ['SoundCloud',/soundcloud/],
-    ['Threads',/(^|\b)threads?\b/],
-    ['VK',/(^|\b)vk\b|vkontakte/],
-    ['Twitch',/twitch/],
-    ['Reddit',/reddit/],
-    ['Pinterest',/pinterest/],
-    ['LinkedIn',/(^|\b)linkedin\b/],
-    ['Snapchat',/snapchat/],
-    ['Discord',/discord/],
-    ['Shazam',/shazam/],
-    ['Vimeo',/vimeo/],
-    ['Quora',/quora/],
-    ['Mixcloud',/mixcloud/],
-    ['OK.ru',/ok\.?ru|(^|\b)ok\b/],
-    ['Audiomack',/audiomack/],
-    ['Dailymotion',/dailymotion/],
-    ['Reverbnation',/reverbnation/],
-    ['Tumblr',/tumblr/],
-    ['WhatsApp',/whatsapp/],
-    ['Website',/\bwebsite\b|web ?traffic|seo|site traffic|webtraffic/],
-    ['Mobile',/\bmobile\b|app installs?/],
-    ['Crypto',/crypto|bitcoin|\bbtc\b|\beth\b|ethereum/],
-    ['GeoTarget',/\bgeo|country|region|target/],
-    ['GoogleReviews',/google ?reviews?/],
-    ['OwnWebsite',/ownwebsite|own website/],
-    ['MaskedTraffic',/masked ?traffic/],
-    ['Podcast',/podcast/],
-    ['MassDM',/mass ?dm/],
-    ['Exchange',/exchange/],
-  ];
-  for (const [name,rx] of map) if (rx.test(s)) return name;
-  return 'Other';
-}
-
-// --- typing & summarization --------------------------------------------------
-const TYPE_PATTERNS = [
-  ['Followers', /follows?|followers?|subs?(cribers?)?/i],
-  ['Likes', /likes?/i],
-  ['Views', /views?|plays?|watch(?: ?time)?/i],
-  ['Comments', /comments?/i],
-  ['Saves', /saves?/i],
-  ['Shares', /shares?|reposts?/i],
-  ['Impressions', /impressions?/i],
-  ['Votes', /votes?|poll/i],
-  ['Members', /members?/i],
-  ['Mentions', /mentions?/i],
-  ['Story', /story|stories/i],
-  ['Live', /live\b/i],
-  ['Traffic', /traffic|visits?/i],
-  ['Other', /.*/]
-];
-function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
-
-function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
-function formatK(n){ n = Number(n||0); if(n>=1_000_000) return (n/1_000_000).toFixed(n%1_000_000?1:0)+'M'; if(n>=1_000) return (n/1_000).toFixed(n%1_000?1:0)+'K'; return String(n); }
-function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||'' }
-function stripEmojis(str){ return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu,''); }
-function baseLabel(name){ const s = stripEmojis(String(name||'')); const cut = s.split(/[\[|]/)[0]; return cut.replace(/smmgoal/ig,'').replace(/\s+/g,' ').trim(); }
-
-function extractMeta(name){
-  const s = String(name||'');
-  const chips = [];
-  const add = (t,kind='gray')=>chips.push({text:t,kind});
-  // refill
-  const r1 = s.match(/(\d{1,3})\s*Days?\s*Refill/i); if(r1) add(`Refill ${r1[1]}d`,'green');
-  const r2 = s.match(/\bR(B)?(\d{1,3})\b/i); if(r2) add(`Refill ${r2[2]}d`,'green');
-  if(/no\s*refill|non\s*refill|no\s*support/i.test(s)) add('No refill','amber');
-  // speed / start
-  if(/instant|0-?\s*\d+\s*min/i.test(s)) add('Instant','green');
-  const spd = s.match(/speed[:\s]*(\d+[kKmM]?)[^\w]*/i); if(spd) add(`Speed ${spd[1]}/d`,'blue');
-  // quality / drop
-  if(/no\s*drop|non\s*drop/i.test(s)) add('No drop','purple');
-  if(/hq|high\s*quality|premium/i.test(s)) add('HQ','purple');
-  if(/cheap|cheapest/i.test(s)) add('Cheapest','amber');
-  // geo (lightweight)
-  const geos = ['USA','US','UK','Germany','France','Italy','Spain','Brazil','Korea','Japan','India','Turkey','Canada'];
-  for(const g of geos){ const rx = new RegExp(`\\b${g}\\b`,'i'); if(rx.test(s)){ add(g.toUpperCase(),'blue'); break; } }
-  return chips;
-}
-
-function summarizeVariant(svc, plat, type){
-  const label = baseLabel(svc.name) || type || 'Variant';
-  const chips = extractMeta(svc.name);
-  chips.unshift({text:`Min ${formatK(svc.min)}`,kind:'gray'});
-  chips.unshift({text:`Max ${formatK(svc.max)}`,kind:'gray'});
-  return {label, chips};
-}
-
-// --- data load & rendering ---------------------------------------------------
-async function load(){
-  const q = encodeURIComponent(elQ?.value||'');
-  const cat = encodeURIComponent(elCat?.value||'');
-  const url = `${API}?action=services${q?`&q=${q}`:''}${cat?`&category=${cat}`:''}`;
-  let res, data; try{ res = await fetch(url); data = await res.json(); } catch { showErr('Failed to load services'); return; }
-  if(!Array.isArray(data)){ showErr(data?.error||'Failed to load services'); return; }
-
-  // group by platform -> base type
-  const byPlat = new Map();
-  for(const s of data){
-    const plat = detectPlatform(`${s.category||''} ${s.name||''}`);
-    const type = getBaseType(s.name||'');
-    if(!byPlat.has(plat)) byPlat.set(plat, new Map());
-    const m = byPlat.get(plat); if(!m.has(type)) m.set(type, []);
-    m.get(type).push(s);
-  }
-
-  // fill category select once (only if the select exists)
-  if(elCat && !elCat.dataset.filled){
-    const plats = [...byPlat.keys()].sort();
-    for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
-    elCat.dataset.filled='1';
-  }
-
-  // render
-  elWrap.innerHTML = '';
-
-  // top-level category cards (by platform)
-  const catsGrid = document.createElement('div');
-  catsGrid.className = 'grid';
-  for (const [p, m] of byPlat) {
-    const catCard = document.createElement('div');
-    catCard.className = 'card';
-    catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
-    catCard.innerHTML = `
-      <h3 style="display:flex;justify-content:space-between;align-items:center">
-        <span>${escapeHtml(p)}</span>
-        <span class="chip s gray">${countServices(m)} services</span>
-      </h3>
-      <div class="muted">Click to explore</div>
-    `;
-    catCard.onclick = () => {
-      const sec = elWrap.querySelector(`section[data-plat="${p}"]`);
-      if (sec) { sec.classList.add('open'); sec.scrollIntoView({behavior:'smooth', block:'start'}); }
-    };
-    catsGrid.appendChild(catCard);
-  }
-  elWrap.appendChild(catsGrid);
-
-  const want = elCat.value;
-  for(const [plat, byType] of byPlat){
-    if(want && plat!==want) continue;
-    const color = PLATFORM_COLORS[plat] || PLATFORM_COLORS.Other;
-
-    const sec = document.createElement('section');
-    sec.className='section';
-    sec.setAttribute('data-plat', plat);
-    sec.style.setProperty('--plat', color);
-    sec.innerHTML = `
-      <div class="head">
-        <div class="row">
-          <span class="chip blue s">${plat}</span>
-          <span class="chip gray s">${countServices(byType)} services</span>
-        </div>
-        <div class="muted">Toggle</div>
-      </div>
-      <div class="body"><div class="grid"></div></div>
-    `;
-    sec.querySelector('.head').addEventListener('click', ()=>sec.classList.toggle('open'));
-
-    const grid = sec.querySelector('.grid');
-    for(const [type, list0] of byType){
-      // sort by price ascending, keep all (no aggressive min/max filter so categories don't disappear)
-      const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
-      if (!list.length) continue;
-      const cheapest = list[0];
-
-      const card = document.createElement('div');
-      card.className='card';
-      card.innerHTML = `
-        <h3>
-          <span class="brand" style="color:var(--brand);font-weight:700">DropSource</span>
-          <span class="muted">·</span>
-          <span style="color:#cdd7ff">${escapeHtml(plat)}</span>
-          <span class="muted">/</span>
-          <span style="color:#cdd7ff">${escapeHtml(type)}</span>
-        </h3>
-        <div class="row">
-          <span class="chip s gray">Min ${formatK(cheapest.min)}</span>
-          <span class="chip s gray">Max ${formatK(cheapest.max)}</span>
-          ${/drip/i.test(cheapest.name)?'<span class="chip s purple">Dripfeed</span>':''}
-          ${/refill/i.test(cheapest.name)?'<span class="chip s green">Refill</span>':''}
-        </div>
-        <div class="row" style="justify-content:space-between;align-items:center">
-          <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
-          <div class="row">
-            <button class="btn"
-              onclick="orderClick(this)"
-              data-id="${cheapest.id}"
-              data-plat="${escapeHtml(plat)}"
-              data-type="${escapeHtml(type)}"
-              data-rate="${cheapest.price_per_1k}"
-              data-min="${cheapest.min}"
-              data-max="${cheapest.max}"
-              data-title="${escapeHtml(cheapest.name)}"
-              data-name="${escapeHtml(type)}"
-              data-slug="${slugify(`${plat} ${type}`)}"
-            >Order cheapest</button>
-            <button class="btn" data-expand>View variants</button>
-          </div>
-        </div>
-      `;
-
-      const det = document.createElement('details');
-      det.style.marginTop='6px';
-      det.innerHTML = `<summary>Variants (${list.length})</summary><div></div>`;
-      const vWrap = det.querySelector('div');
-
-      for(const svc of list){
-        const {label, chips} = summarizeVariant(svc, plat, type);
-        const row = document.createElement('div');
-        row.className='variant';
-        row.innerHTML = `
-          <div class="row" style="gap:6px;align-items:baseline">
-            <div style="font-size:13px;color:#d7e2f0">${escapeHtml(label)}</div>
-            ${chips.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
-          </div>
-          <div class="row">
-            <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
-            <button class="btn"
-              onclick="orderClick(this)"
-              data-id="${svc.id}"
-              data-plat="${escapeHtml(plat)}"
-              data-type="${escapeHtml(type)}"
-              data-rate="${svc.price_per_1k}"
-              data-min="${svc.min}"
-              data-max="${svc.max}"
-              data-title="${escapeHtml(svc.name)}"
-              data-name="${escapeHtml(type)}"
-              data-slug="${slugify(`${plat} ${type}`)}"
-            >Order</button>
-          </div>`;
-        vWrap.appendChild(row);
-      }
-      card.appendChild(det);
-      card.querySelector('[data-expand]').onclick=()=>det.open=!det.open;
-      grid.appendChild(card);
+  <script>
+  (function(){
+    // hard fail reporter so a white page is impossible
+    function showFatal(err){
+      console.error(err);
+      const o=document.getElementById('errorOverlay');
+      const t=document.getElementById('errorText');
+      if(t){ t.textContent = (err && (err.stack||err.message||String(err))) || 'Unknown error'; }
+      if(o){ o.style.display='flex'; }
     }
-    elWrap.appendChild(sec);
-  }
-}
+    window.addEventListener('error', e=>showFatal(e.error||e.message||e));
+    window.addEventListener('unhandledrejection', e=>showFatal(e.reason||e));
 
-function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
+    try{
+      // --- config & dom refs -------------------------------------------------------
+      const API = '/api/smm';
+      const elQ = document.getElementById('q');
+      const elCat = document.getElementById('cat');
+      const elWrap = document.getElementById('wrap');
+      document.getElementById('reload').onclick = load;
+      document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
+      document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
+      elQ.oninput = load; elCat.onchange = load;
 
-// --- order redirect ----------------------------------------------------------
-function orderClick(btn){
-  const d = btn.dataset;
-  const qs = new URLSearchParams({
-    id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
-    rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
-  });
-  location.href = `/purchase.html?${qs.toString()}`;
-}
+      function showErr(m){ console.error(m); const box=document.createElement('div'); box.className='loading'; box.textContent=m; elWrap.replaceChildren(box);} 
 
-// kick off
-load();
-</script>
+      // --- platform meta -----------------------------------------------------------
+      const PLATFORM_COLORS = {
+        Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
+        TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
+        SoundCloud:'#FF5500', Threads:'#000000', VK:'#4C75A3', Twitch:'#9146FF',
+        Reddit:'#FF4500', Pinterest:'#E60023', LinkedIn:'#0A66C2', Snapchat:'#FFFC00',
+        Discord:'#5865F2', Shazam:'#0088FF', Vimeo:'#1AB7EA', Quora:'#B92B27',
+        Mixcloud:'#273A4B', 'OK.ru':'#F4731C', Audiomack:'#FFA200', Dailymotion:'#0066DC',
+        Reverbnation:'#000000', Tumblr:'#35465C', WhatsApp:'#25D366',
+        Website:'#59a0ff', Mobile:'#59a0ff', Crypto:'#f7931a', GeoTarget:'#59a0ff',
+        GoogleReviews:'#34a853', OwnWebsite:'#59a0ff', MaskedTraffic:'#59a0ff',
+        Podcast:'#ffa500', MassDM:'#59a0ff', Exchange:'#59a0ff', Other:'#59a0ff'
+      };
+
+      function detectPlatform(str=''){
+        const s = String(str).toLowerCase();
+        const map = [
+          ['Instagram',/(^|\b)(instagram|ig)\b/],
+          ['Telegram',/(^|\b)(telegram|tg)\b/],
+          ['Twitter',/(^|\b)twitter\b/],
+          ['X',/(^|\b)x\b(?![a-z])/],
+          ['TikTok',/(^|\b)(tiktok|tt)\b/],
+          ['Facebook',/(^|\b)(facebook|fb)\b/],
+          ['YouTube',/(^|\b)(youtube|yt|shorts)\b/],
+          ['Spotify',/spotify/],
+          ['SoundCloud',/soundcloud/],
+          ['Threads',/(^|\b)threads?\b/],
+          ['VK',/(^|\b)vk\b|vkontakte/],
+          ['Twitch',/twitch/],
+          ['Reddit',/reddit/],
+          ['Pinterest',/pinterest/],
+          ['LinkedIn',/(^|\b)linkedin\b/],
+          ['Snapchat',/snapchat/],
+          ['Discord',/discord/],
+          ['Shazam',/shazam/],
+          ['Vimeo',/vimeo/],
+          ['Quora',/quora/],
+          ['Mixcloud',/mixcloud/],
+          ['OK.ru',/ok\.?ru|(^|\b)ok\b/],
+          ['Audiomack',/audiomack/],
+          ['Dailymotion',/dailymotion/],
+          ['Reverbnation',/reverbnation/],
+          ['Tumblr',/tumblr/],
+          ['WhatsApp',/whatsapp/],
+          ['Website',/\bwebsite\b|web ?traffic|seo|site traffic|webtraffic/],
+          ['Mobile',/\bmobile\b|app installs?/],
+          ['Crypto',/crypto|bitcoin|\bbtc\b|\beth\b|ethereum/],
+          ['GeoTarget',/\bgeo|country|region|target/],
+          ['GoogleReviews',/google ?reviews?/],
+          ['OwnWebsite',/ownwebsite|own website/],
+          ['MaskedTraffic',/masked ?traffic/],
+          ['Podcast',/podcast/],
+          ['MassDM',/mass ?dm/],
+          ['Exchange',/exchange/],
+        ];
+        for (const [name,rx] of map) if (rx.test(s)) return name;
+        return 'Other';
+      }
+
+      const TYPE_PATTERNS = [
+        ['Followers', /follows?|followers?|subs?(cribers?)?/i],
+        ['Likes', /likes?/i],
+        ['Views', /views?|plays?|watch(?: ?time)?/i],
+        ['Comments', /comments?/i],
+        ['Saves', /saves?/i],
+        ['Shares', /shares?|reposts?/i],
+        ['Impressions', /impressions?/i],
+        ['Votes', /votes?|poll/i],
+        ['Members', /members?/i],
+        ['Mentions', /mentions?/i],
+        ['Story', /story|stories/i],
+        ['Live', /live\b/i],
+        ['Traffic', /traffic|visits?/i],
+        ['Other', /.*/]
+      ];
+      function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
+
+      function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+      function formatK(n){ n = Number(n||0); if(n>=1_000_000) return (n/1_000_000).toFixed(n%1_000_000?1:0)+'M'; if(n>=1_000) return (n/1_000).toFixed(n%1_000?1:0)+'K'; return String(n); }
+      function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]))||'' }
+      function stripEmojis(str){ return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu,''); }
+      function baseLabel(name){ const s = stripEmojis(String(name||'')); const cut = s.split(/[\[|]/)[0]; return cut.replace(/smmgoal/ig,'').replace(/\s+/g,' ').trim(); }
+
+      function extractMeta(name){
+        const s = String(name||'');
+        const chips = [];
+        const add = (t,kind='gray')=>chips.push({text:t,kind});
+        const r1 = s.match(/(\d{1,3})\s*Days?\s*Refill/i); if(r1) add(`Refill ${r1[1]}d`,'green');
+        const r2 = s.match(/\bR(B)?(\d{1,3})\b/i); if(r2) add(`Refill ${r2[2]}d`,'green');
+        if(/no\s*refill|non\s*refill|no\s*support/i.test(s)) add('No refill','amber');
+        if(/instant|0-?\s*\d+\s*min/i.test(s)) add('Instant','green');
+        const spd = s.match(/speed[:\s]*(\d+[kKmM]?)[^\w]*/i); if(spd) add(`Speed ${spd[1]}/d`,'blue');
+        if(/no\s*drop|non\s*drop/i.test(s)) add('No drop','purple');
+        if(/hq|high\s*quality|premium/i.test(s)) add('HQ','purple');
+        if(/cheap|cheapest/i.test(s)) add('Cheapest','amber');
+        const geos = ['USA','US','UK','Germany','France','Italy','Spain','Brazil','Korea','Japan','India','Turkey','Canada'];
+        for(const g of geos){ const rx = new RegExp(`\\b${g}\\b`,'i'); if(rx.test(s)){ add(g.toUpperCase(),'blue'); break; } }
+        return chips;
+      }
+
+      function summarizeVariant(svc, plat, type){
+        const label = baseLabel(svc.name) || type || 'Variant';
+        const chips = extractMeta(svc.name);
+        chips.unshift({text:`Min ${formatK(svc.min)}`,kind:'gray'});
+        chips.unshift({text:`Max ${formatK(svc.max)}`,kind:'gray'});
+        return {label, chips};
+      }
+
+      async function load(){
+        try{
+          const q = encodeURIComponent(elQ.value||'');
+          const cat = encodeURIComponent(elCat.value||'');
+          const url = `${API}?action=services${q?`&q=${q}`:''}${cat?`&category=${cat}`:''}`;
+          const res = await fetch(url);
+          let data; try{ data = await res.json(); }catch(e){ showErr('Could not parse API response as JSON'); return; }
+          if(!Array.isArray(data)){ showErr((data&&data.error)||'Failed to load services'); return; }
+
+          const byPlat = new Map();
+          for(const s of data){
+            const plat = detectPlatform(`${s.category||''} ${s.name||''}`);
+            const type = getBaseType(s.name||'');
+            if(!byPlat.has(plat)) byPlat.set(plat, new Map());
+            const m = byPlat.get(plat); if(!m.has(type)) m.set(type, []);
+            m.get(type).push(s);
+          }
+
+          if(!elCat.dataset.filled){
+            const plats = [...byPlat.keys()].sort();
+            for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
+            elCat.dataset.filled='1';
+          }
+
+          elWrap.innerHTML='';
+
+          const catsGrid = document.createElement('div');
+          catsGrid.className='grid';
+          for (const [p, m] of byPlat) {
+            const catCard = document.createElement('div');
+            catCard.className = 'card';
+            catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
+            catCard.innerHTML = `
+              <h3 style="display:flex;justify-content:space-between;align-items:center">
+                <span>${escapeHtml(p)}</span>
+                <span class="chip s gray">${countServices(m)} services</span>
+              </h3>
+              <div class="muted">Click to explore</div>
+            `;
+            catCard.onclick = () => {
+              const sec = elWrap.querySelector(`section[data-plat="${p}"]`);
+              if (sec) { sec.classList.add('open'); sec.scrollIntoView({behavior:'smooth', block:'start'}); }
+            };
+            catsGrid.appendChild(catCard);
+          }
+          elWrap.appendChild(catsGrid);
+
+          const want = elCat.value;
+          for(const [plat, byType] of byPlat){
+            if(want && plat!==want) continue;
+            const color = PLATFORM_COLORS[plat] || PLATFORM_COLORS.Other;
+
+            const sec = document.createElement('section');
+            sec.className='section';
+            sec.setAttribute('data-plat', plat);
+            sec.style.setProperty('--plat', color);
+            sec.innerHTML = `
+              <div class="head">
+                <div class="row">
+                  <span class="chip blue s">${plat}</span>
+                  <span class="chip gray s">${countServices(byType)} services</span>
+                </div>
+                <div class="muted">Toggle</div>
+              </div>
+              <div class="body"><div class="grid"></div></div>
+            `;
+            sec.querySelector('.head').addEventListener('click', ()=>sec.classList.toggle('open'));
+
+            const grid = sec.querySelector('.grid');
+            for(const [type, list0] of byType){
+              const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
+              if (!list.length) continue;
+              const cheapest = list[0];
+
+              const card = document.createElement('div');
+              card.className='card';
+              card.innerHTML = `
+                <h3>
+                  <span class="brand">DropSource</span>
+                  <span class="muted">·</span>
+                  <span style="color:#cdd7ff">${escapeHtml(plat)}</span>
+                  <span class="muted">/</span>
+                  <span style="color:#cdd7ff">${escapeHtml(type)}</span>
+                </h3>
+                <div class="row">
+                  <span class="chip s gray">Min ${formatK(cheapest.min)}</span>
+                  <span class="chip s gray">Max ${formatK(cheapest.max)}</span>
+                  ${/drip/i.test(cheapest.name)?'<span class="chip s purple">Dripfeed<\/span>':''}
+                  ${/refill/i.test(cheapest.name)?'<span class="chip s green">Refill<\/span>':''}
+                </div>
+                <div class="row" style="justify-content:space-between;align-items:center">
+                  <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
+                  <div class="row">
+                    <button class="btn"
+                      data-id="${cheapest.id}"
+                      data-plat="${escapeHtml(plat)}"
+                      data-type="${escapeHtml(type)}"
+                      data-rate="${cheapest.price_per_1k}"
+                      data-min="${cheapest.min}"
+                      data-max="${cheapest.max}"
+                      data-title="${escapeHtml(cheapest.name)}"
+                      data-name="${escapeHtml(type)}"
+                      data-slug="${slugify(`${plat} ${type}`)}"
+                    >Order cheapest</button>
+                    <button class="btn" data-expand>View variants</button>
+                  </div>
+                </div>
+              `;
+
+              // hook up order
+              card.querySelector('button.btn').onclick = (ev)=>{
+                const d = ev.currentTarget.dataset;
+                const qs = new URLSearchParams({
+                  id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
+                  rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
+                });
+                location.href = `/purchase.html?${qs.toString()}`;
+              };
+
+              const det = document.createElement('details');
+              det.style.marginTop='6px';
+              det.innerHTML = `<summary>Variants (${list.length})</summary><div></div>`;
+              const vWrap = det.querySelector('div');
+
+              for(const svc of list){
+                const {label, chips} = summarizeVariant(svc, plat, type);
+                const row = document.createElement('div');
+                row.className='variant';
+                row.innerHTML = `
+                  <div class="row" style="gap:6px;align-items:baseline">
+                    <div style="font-size:13px;color:#d7e2f0">${escapeHtml(label)}</div>
+                    ${chips.map(t=>`<span class=\"chip s ${t.kind}\">${escapeHtml(t.text)}</span>`).join('')}
+                  </div>
+                  <div class="row">
+                    <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
+                    <button class="btn"
+                      data-id="${svc.id}"
+                      data-plat="${escapeHtml(plat)}"
+                      data-type="${escapeHtml(type)}"
+                      data-rate="${svc.price_per_1k}"
+                      data-min="${svc.min}"
+                      data-max="${svc.max}"
+                      data-title="${escapeHtml(svc.name)}"
+                      data-name="${escapeHtml(type)}"
+                      data-slug="${slugify(`${plat} ${type}`)}"
+                    >Order</button>
+                  </div>`;
+
+                row.querySelector('button.btn').onclick = (ev)=>{
+                  const d = ev.currentTarget.dataset;
+                  const qs = new URLSearchParams({
+                    id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
+                    rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
+                  });
+                  location.href = `/purchase.html?${qs.toString()}`;
+                };
+
+                vWrap.appendChild(row);
+              }
+              card.appendChild(det);
+              card.querySelector('[data-expand]').onclick=()=>det.open=!det.open;
+              grid.appendChild(card);
+            }
+            elWrap.appendChild(sec);
+          }
+        }catch(e){ showFatal(e); }
+      }
+
+      function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
+
+      // initial load
+      load();
+    }catch(e){ showFatal(e); }
+  })();
+  </script>
+</body>
+</html>
