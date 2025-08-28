@@ -3,7 +3,7 @@ import { readRawBody } from '../../lib/smm.js';
 import * as crypto from 'node:crypto';
 import { sb } from '../../lib/db.js';
 
-export const config = { runtime: 'nodejs' };
+export const config = { runtime: 'nodejs18.x' };
 
 type AnyObj = Record<string, any>;
 
