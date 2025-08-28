@@ -1,15 +1,41 @@
 <script>
 // --- config & dom refs -------------------------------------------------------
 const API = '/api/smm';
-const elQ = document.getElementById('q');
-const elCat = document.getElementById('cat');
-const elWrap = document.getElementById('wrap');
+let elQ = document.getElementById('q');
+let elCat = document.getElementById('cat');
+let elWrap = document.getElementById('wrap');
 
-// controls
-(document.getElementById('reload')||{}).onclick = load;
-(document.getElementById('expandAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
-(document.getElementById('collapseAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
-elQ.oninput = load; elCat.onchange = load;
+// Ensure the basic UI exists even if the HTML didn't include it (prevents blank page)
+(function ensureUI(){
+  if(!elWrap){
+    elWrap = document.createElement('div');
+    elWrap.id = 'wrap';
+    document.body.appendChild(elWrap);
+  }
+  if(!elQ || !elCat){
+    const bar = document.createElement('div');
+    bar.id = 'toolbar';
+    bar.style.margin = '12px auto';
+    bar.style.maxWidth = '1200px';
+    bar.style.display = 'flex';
+    bar.style.gap = '8px';
+    bar.innerHTML = `
+      <input id="q" placeholder="Search services…" style="flex:1;min-width:200px"/>
+      <select id="cat"><option value="">All platforms</option></select>
+      <button id="reload" class="btn small">Reload</button>
+      <button id="expandAll" class="btn small">Expand all</button>
+      <button id="collapseAll" class="btn small">Collapse all</button>
+    `;
+    document.body.prepend(bar);
+    elQ = bar.querySelector('#q');
+    elCat = bar.querySelector('#cat');
+  }
+  (document.getElementById('reload')||{}).onclick = load;
+  (document.getElementById('expandAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
+  (document.getElementById('collapseAll')||{}).onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
+  if (elQ) elQ.oninput = load;
+  if (elCat) elCat.onchange = load;
+})();
 
 function showErr(m){ console.error(m); alert(m); }
 
@@ -128,8 +154,8 @@ function summarizeVariant(svc, plat, type){
 
 // --- data load & rendering ---------------------------------------------------
 async function load(){
-  const q = encodeURIComponent(elQ.value||'');
-  const cat = encodeURIComponent(elCat.value||'');
+  const q = encodeURIComponent(elQ?.value||'');
+  const cat = encodeURIComponent(elCat?.value||'');
   const url = `${API}?action=services${q?`&q=${q}`:''}${cat?`&category=${cat}`:''}`;
   let res, data; try{ res = await fetch(url); data = await res.json(); } catch { showErr('Failed to load services'); return; }
   if(!Array.isArray(data)){ showErr(data?.error||'Failed to load services'); return; }
@@ -144,8 +170,8 @@ async function load(){
     m.get(type).push(s);
   }
 
-  // fill category select once
-  if(!elCat.dataset.filled){
+  // fill category select once (only if the select exists)
+  if(elCat && !elCat.dataset.filled){
     const plats = [...byPlat.keys()].sort();
     for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
     elCat.dataset.filled='1';
