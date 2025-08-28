@@ -50,7 +50,12 @@ export default async function handler(req: any, res: any) {
   try {
     // 1) Verify webhook HMAC (unless disabled for local tests)
     const secret = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
-    const headerSig = String(req.headers['x-square-hmacsha256'] || '');
+    const headerSig = String(
+      req.headers['x-square-hmacsha256'] ||
+      req.headers['x-square-hmacsha256-signature'] ||
+      req.headers['x-square-signature'] ||
+      ''
+    );
     const raw = await readRawBody(req);
 
     if (!debugNoVerify) {
@@ -58,9 +63,19 @@ export default async function handler(req: any, res: any) {
         await logWebhook(sb, 'missing_signature', 400, { hasSecret: !!secret, hasHeader: !!headerSig });
         return json(res, 400, { error: 'missing signature' });
       }
-      const expected = crypto.createHmac('sha256', secret).update(raw).digest('base64');
-      if (expected !== headerSig) {
-        await logWebhook(sb, 'bad_signature', 400, { expected, headerSig });
+      // Square docs: HMAC_SHA256(secret, endpoint + rawBody) base64
+      const baseUrl  = process.env.PUBLIC_URL || `https://${req.headers.host}`;
+      const endpoint = `${baseUrl}/api/deposits/webhook-square`;
+      const rawStr   = raw.toString('utf8');
+
+      const expectedEndpointBody = crypto.createHmac('sha256', secret).update(endpoint + rawStr).digest('base64');
+      const expectedBodyOnly     = crypto.createHmac('sha256', secret).update(raw).digest('base64');
+
+      if (headerSig !== expectedEndpointBody && headerSig !== expectedBodyOnly) {
+        await logWebhook(sb, 'bad_signature', 400, {
+          match: 'none',
+          headerSig
+        });
         return json(res, 400, { error: 'bad signature' });
       }
     }
@@ -102,7 +117,7 @@ export default async function handler(req: any, res: any) {
     }
 
     // 5) Mark deposit confirmed (use a schema-safe value)
-    const successStatus = 'confirmed';
+    const successStatus = 'paid';
     try { await sb.from('deposits').update({ status: successStatus }).eq('id', dep.id); } catch {}
 
     // 6) Credit wallet
