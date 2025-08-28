@@ -235,6 +235,8 @@ async function load(){
       if (!list.length) continue;
       const cheapest = list[0];
 
+      const cheapestSlug = slugify(cheapest.name);
+
       const card = document.createElement('div');
       card.className='card';
       card.innerHTML = `
@@ -250,14 +252,17 @@ async function load(){
           <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
           <div class="row">
             <button class="btn"
-  onclick="orderClick(this)"
-  data-id="${cheapest.id}"
-  data-min="${cheapest.min}"
-  data-max="${cheapest.max}"
-  data-price="${cheapest.price_per_1k}"
-  data-name="${escapeHtml(type)}"
-  data-title="${escapeHtml(cheapest.name)}"
->Order cheapest</button>
+    onclick="orderClick(this)"
+    data-id="${cheapest.id}"
+    data-min="${cheapest.min}"
+    data-max="${cheapest.max}"
+    data-price="${cheapest.price_per_1k}"
+    data-name="${escapeHtml(type)}"
+    data-title="${escapeHtml(cheapest.name)}"
+    data-plat="${escapeHtml(plat)}"
+    data-type="${escapeHtml(type)}"
+    data-slug="${escapeHtml(cheapestSlug)}"
+  >Order cheapest</button>
             <button class="btn" data-expand>View variants</button>
           </div>
         </div>
@@ -269,6 +274,7 @@ async function load(){
       const vWrap = det.querySelector('div');
 
       for(const svc of list){
+        const svcSlug = slugify(svc.name);
         const tags = makeTags(svc.name);
         const row = document.createElement('div');
         row.className='variant';
@@ -279,14 +285,17 @@ async function load(){
           <div class="row">
             <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
             <button class="btn"
-  onclick="orderClick(this)"
-  data-id="${svc.id}"
-  data-min="${svc.min}"
-  data-max="${svc.max}"
-  data-price="${svc.price_per_1k}"
-  data-name="${escapeHtml(type)}"
-  data-title="${escapeHtml(svc.name)}"
->Order</button>
+    onclick="orderClick(this)"
+    data-id="${svc.id}"
+    data-min="${svc.min}"
+    data-max="${svc.max}"
+    data-price="${svc.price_per_1k}"
+    data-name="${escapeHtml(type)}"
+    data-title="${escapeHtml(svc.name)}"
+    data-plat="${escapeHtml(plat)}"
+    data-type="${escapeHtml(type)}"
+    data-slug="${escapeHtml(svcSlug)}"
+  >Order</button>
           </div>`;
         vWrap.appendChild(row);
       }
@@ -302,6 +311,14 @@ async function load(){
 
 function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
 function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))||'' }
+function slugify(x){
+  return String(x||'')
+    .toLowerCase()
+    .normalize('NFKD')               // strip accents
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-')      // non-word to hyphen
+    .replace(/(^-|-$)/g,'');         // trim hyphens
+}
 
 async function placeOrder(serviceId, link, quantity, runs, interval){
   const res = await fetch(API, {
@@ -312,10 +329,19 @@ async function placeOrder(serviceId, link, quantity, runs, interval){
 }
 
 function orderClick(btn){
-  // Build a clean redirect to the purchase screen with prefilled service name.
-  const serviceName = btn.dataset.title || btn.dataset.name || 'Service';
-  const defaultTarget = ''; // leave empty; purchase.html will let the user paste it
-  location.href = `/purchase.html?name=${encodeURIComponent(serviceName)}&link=${encodeURIComponent(defaultTarget||'')}`;
+  // Redirect to purchase with robust prefill info.
+  const params = new URLSearchParams({
+    id: btn.dataset.id || '',
+    slug: btn.dataset.slug || '',
+    name: btn.dataset.title || btn.dataset.name || '',
+    plat: btn.dataset.plat || '',
+    type: btn.dataset.type || '',
+    rate: btn.dataset.price || '',
+    min: btn.dataset.min || '',
+    max: btn.dataset.max || '',
+    link: '' // left blank; user pastes target on purchase screen
+  });
+  location.href = `/purchase.html?${params.toString()}`;
 }
 load();
 </script>

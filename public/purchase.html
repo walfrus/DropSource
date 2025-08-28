@@ -14,6 +14,10 @@
     .muted{color:#666}
     .ok{color:#0a7a0a}
     .err{color:#b00020}
+  .help{font-size:12px;color:#777;margin-top:4px}
+  input[disabled]{background:#f6f6f6}
+  .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .small{font-size:12px}
   </style>
 </head>
 <body>
@@ -31,17 +35,28 @@
       </div>
     </div>
     <button id="chk">Check Wallet</button>
+    <p class="help small">Tip: we’ll remember your user id + email on this device only. (Full login coming soon.)</p>
     <p class="muted">Balance: <b id="bal">$0.00</b></p>
   </div>
 
   <div class="card">
+      <div class="row">
+        <div>
+          <label>Filter by category</label>
+          <select id="fcat"><option value="">All</option></select>
+        </div>
+        <div>
+          <label>Search</label>
+          <input id="find" placeholder="type to filter services"/>
+        </div>
+      </div>
       <label>Service</label>
       <select id="svc"></select>
 
       <div class="row">
         <div>
           <label>Category</label>
-          <input id="cat" placeholder="instagram" />
+          <input id="cat" placeholder="instagram" disabled />
         </div>
         <div>
           <label>Rate / 1k (USD)</label>
@@ -63,11 +78,15 @@
         </div>
       </div>
 
-      <div class="row" style="margin-top:12px">
+      <div class="buttons">
         <button id="create">Create Order</button>
         <button id="add5">+ $5 via Square</button>
       </div>
-
+      <div class="buttons">
+        <button id="add5c">+ $5 via Crypto (Coinbase)</button>
+        <button id="addCustom">Add Custom Amount</button>
+      </div>
+      <p class="help" id="minmax"></p>
       <p id="msg" class="muted"></p>
   </div>
 
@@ -75,26 +94,29 @@
 const BASE = location.origin;
 const $ = (id)=>document.getElementById(id);
 
+// persist pseudo-login locally (temporary until real auth)
+const KEY='ds_user';
+function loadUser(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}'); }catch{ return {}; } }
+function saveUser(uid,email){ localStorage.setItem(KEY, JSON.stringify({uid,email})); }
+function applyUser(){ const u=loadUser(); if(u.uid) $('uid').value=u.uid; if(u.email) $('email').value=u.email; }
+
 // --- helpers ---
 function cents(n){ return `$${(n/100).toFixed(2)}`; }
 function params(){ return Object.fromEntries(new URLSearchParams(location.search)); }
-
-async function api(path, opts={}, headers={}) {
-  const uid = $('uid').value.trim();
-  const email = $('email').value.trim();
-  const h = Object.assign({
-    'content-type':'application/json',
-    'x-user-id': uid,
-    'x-user-email': email
-  }, headers);
-  const r = await fetch(path, Object.assign({ headers: h }, opts));
-  const t = await r.text();
-  try { return { ok:r.ok, json: JSON.parse(t) }; } catch { return { ok:r.ok, text:t }; }
+function slugify(s){
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')       // strip diacritics
+    .replace(/[^\w\s-]/g, ' ')             // remove emojis/punct
+    .replace(/\s+/g, ' ')                  // collapse spaces
+    .trim()
+    .replace(/\s/g, '-');                  // to kebab
 }
 
-// --- CSV loading ---
-// CSV columns (exact): name,rate_per_1k_usd,min,max
+// CSV columns (exact): name,rate_per_1k_usd,min,max,(optional) category
 let catalog = [];
+// lookup by lower-name and by slug
 let byName = new Map();
 
 async function loadCSV() {
@@ -108,6 +130,7 @@ async function loadCSV() {
     rate: headers.indexOf('rate_per_1k_usd'),
     min: headers.indexOf('min'),
     max: headers.indexOf('max'),
+    category: headers.indexOf('category')
   };
 
   catalog = rows.map((line) => {
@@ -118,56 +141,87 @@ async function loadCSV() {
       if (ch === '"') {
         if (inQ && line[i+1] === '"') { cur+='"'; i++; }
         else inQ = !inQ;
-      } else if (ch === ',' && !inQ) {
-        cols.push(cur); cur='';
-      } else cur += ch;
+      } else if (ch === ',' && !inQ) { cols.push(cur); cur=''; }
+      else cur += ch;
     }
     cols.push(cur);
-    const name = (cols[idx.name]||'').replace(/^"|"$/g,'');
+    const name = (cols[idx.name]||'').replace(/^"|"$/g,'').trim();
     const rate = parseFloat((cols[idx.rate]||'0').replace(/"/g,'')) || 0;
     const min = parseInt((cols[idx.min]||'0').replace(/"/g,''),10) || 0;
     const max = parseInt((cols[idx.max]||'0').replace(/"/g,''),10) || 0;
-    return { name, rate, min, max };
+    let category = (cols[idx.category]||'').replace(/^"|"$/g,'').trim();
+    if (!category) category = categorizeFromName(name);
+    const slug = slugify(name);
+    return { name, rate, min, max, category, slug };
   }).filter(x => x.name && x.rate > 0);
 
-  byName = new Map(catalog.map(x => [x.name.toLowerCase(), x]));
-
-  // fill dropdown
-  const el = $('svc');
-  el.innerHTML = '';
-  for (const s of catalog) {
-    const opt = document.createElement('option');
-    opt.value = s.name;
-    opt.textContent = s.name;
-    el.appendChild(opt);
+  // rebuild lookups
+  byName = new Map();
+  for (const s of catalog){
+    byName.set(s.name.toLowerCase(), s);
+    byName.set(s.slug, s);
   }
+
+  // build category filter list
+  const cats = Array.from(new Set(catalog.map(s => s.category))).sort((a,b)=>a.localeCompare(b));
+  const fcat = $('fcat');
+  fcat.innerHTML = '<option value="">All</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  // render options (unfiltered list – we'll filter dynamically)
+  const el = $('svc');
+  el.innerHTML = catalog.map(s => {
+    const label = s.name;
+    return `<option value="${s.name.replace(/"/g,'&quot;')}" data-cat="${s.category}" data-slug="${s.slug}">${label}</option>`;
+  }).join('');
+}
+
+function selectedRecord(){
+  const sel = $('svc');
+  const opt = sel.selectedOptions[0];
+  const slug = opt?.dataset.slug;
+  const name = opt?.value || '';
+  return (slug && byName.get(slug)) || byName.get(name.toLowerCase()) || null;
+}
+
+function applyFilters(){
+  const q = $('find').value.trim().toLowerCase();
+  const cat = $('fcat').value;
+  const el = $('svc');
+  const keep = [];
+  for (const opt of Array.from(el.options)){
+    const matchesCat = !cat || opt.dataset.cat === cat;
+    const matchesText = !q || opt.textContent.toLowerCase().includes(q);
+    const show = matchesCat && matchesText;
+    opt.hidden = !show;
+    if (show) keep.push(opt);
+  }
+  // ensure one visible option is selected
+  const currentVisible = keep.find(o => o.selected);
+  if (!currentVisible && keep.length) keep[0].selected = true;
+  updateFromSelection();
 }
 
 function updateFromSelection() {
-  const name = $('svc').value;
-  const rec = byName.get(name.toLowerCase());
+  const rec = selectedRecord();
   if (!rec) return;
+  const name = rec.name;
+  $('cat').value = (rec.category || categorizeFromName(rec.name));
+  $('cat').disabled = true;
   $('rate').value = `$${rec.rate.toFixed(2)} / 1k`;
   $('qty').min = Math.max(1, rec.min || 1);
   $('qty').max = rec.max || 1000000;
   $('qty').value = Math.max(parseInt($('qty').value || '0', 10) || rec.min || 1, rec.min || 1);
   estimate();
-}
-
-async function refreshBalance() {
-  const r = await api(`${BASE}/api/wallet/get`);
-  if (r.ok && r.json && typeof r.json.balance_cents === 'number') {
-    $('bal').textContent = cents(r.json.balance_cents);
-  } else {
-    $('bal').textContent = '—';
-  }
+  const mm = [];
+  if (rec?.min) mm.push(`min ${rec.min}`);
+  if (rec?.max) mm.push(`max ${rec.max}`);
+  $('minmax').textContent = mm.length ? `Provider limits: ${mm.join(' · ')}` : '';
 }
 
 function estimate() {
-  const name = $('svc').value;
-  const rec = byName.get((name||'').toLowerCase());
+  const rec = selectedRecord();
   const qty = Number($('qty').value || 0);
-  const pricePerUnitCents = rec ? Math.round(rec.rate * 100 / 1000) : 0; // rate is per 1k USD → cents per 1
+  const pricePerUnitCents = rec ? Math.round(rec.rate * 100 / 1000) : 0;
   $('est').value = cents(pricePerUnitCents * qty);
 }
 
@@ -185,10 +239,35 @@ async function resolveServiceIdByName(name) {
   return (candidates[0] && candidates[0].id) || list[0].id || null;
 }
 
+function findServiceFromQuery(q){
+  if (!q) return null;
+  const s = String(q);
+  const tryKeys = [
+    s,
+    decodeURIComponent(s || ''),
+    s.replace(/\s+/g,' ').trim()
+  ];
+  // exact by slug or lower-name
+  for (const k of tryKeys){
+    const m = byName.get(slugify(k)) || byName.get(String(k).toLowerCase());
+    if (m) return m;
+  }
+  // fuzzy: substring on slug
+  const needle = slugify(s).replace(/-/g,' ');
+  let best = null;
+  for (const rec of catalog){
+    const hay = rec.slug.replace(/-/g,' ');
+    if (hay.includes(needle)) { best = rec; break; }
+  }
+  return best;
+}
+
 // hook up UI
 $('chk').onclick = refreshBalance;
 $('svc').addEventListener('change', updateFromSelection);
 $('qty').addEventListener('input', estimate);
+$('find').addEventListener('input', applyFilters);
+$('fcat').addEventListener('change', applyFilters);
 
 $('create').onclick = async () => {
   $('msg').className = 'muted';
@@ -220,31 +299,50 @@ $('create').onclick = async () => {
   }
 };
 
-$('add5').onclick = async () => {
-  $('msg').textContent = 'Creating Square link...';
-  const r = await api(`${BASE}/api/deposits/create-square`, {
-    method:'POST',
-    body: JSON.stringify({ amount_cents: 500 })
-  });
+async function addFunds(method, cents){
+  const path = method==='coinbase' ? '/api/deposits/create-coinbase' : '/api/deposits/create-square';
+  const r = await api(`${BASE}${path}`, { method:'POST', body: JSON.stringify({ amount_cents: cents }) });
   const url = r.json?.url;
   if (url) {
     $('msg').innerHTML = `Link created: <a href="${url}" target="_blank" rel="noopener">${url}</a>`;
   } else {
-    $('msg').textContent = 'Could not create link';
+    $('msg').textContent = r.json?.error || 'Could not create link';
+    $('msg').className = 'err';
   }
+}
+
+$('add5').onclick = () => addFunds('square',500);
+$('add5c').onclick = () => addFunds('coinbase',500);
+$('addCustom').onclick = () => {
+  const v = prompt('Add funds (USD):', '10');
+  const dollars = Math.max(0, Number(v||0));
+  if (!dollars) return;
+  // default to Square; change to coinbase if preferred
+  addFunds('square', Math.round(dollars*100));
 };
 
 // init
 (async function init(){
+  applyUser();
   await loadCSV();
   const qp = params();
-  // If arriving from a card link with ?name=...&min=...&max=...&rate=...
-  if (qp.name && byName.has(qp.name.toLowerCase())) {
-    $('svc').value = qp.name;
+  // Preselect by name/slug/index if present
+  let picked = null;
+  if (qp.idx && catalog[Number(qp.idx)]) picked = catalog[Number(qp.idx)];
+  if (!picked && qp.slug) picked = byName.get(String(qp.slug).toLowerCase()) || byName.get(String(qp.slug));
+  if (!picked && qp.name) picked = findServiceFromQuery(qp.name);
+  // Choose the option matching the picked record
+  if (picked){
+    const el = $('svc');
+    const match = Array.from(el.options).find(o => o.dataset.slug === picked.slug);
+    if (match) match.selected = true;
+    // auto-filter to its category so the list is smaller
+    $('fcat').value = picked.category || '';
   }
-  updateFromSelection();
+  applyFilters();
   // Pre-fill target URL if supplied
   if (qp.link) $('url').value = qp.link;
+  estimate();
 })();
 </script>
 </body>
