@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Buy Services</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:680px;margin:24px auto;padding:0 16px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
+    label{display:block;margin:8px 0 4px}
+    input,select,button{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px}
+    button{cursor:pointer}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .muted{color:#666}
+    .ok{color:#0a7a0a}
+    .err{color:#b00020}
+  </style>
+</head>
+<body>
+  <h1>Purchase</h1>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>User ID</label>
+        <input id="uid" placeholder="user_123" />
+      </div>
+      <div>
+        <label>Email</label>
+        <input id="email" placeholder="you@example.com" />
+      </div>
+    </div>
+    <button id="chk">Check Wallet</button>
+    <p class="muted">Balance: <b id="bal">$0.00</b></p>
+  </div>
+
+  <div class="card">
+    <label>Service</label>
+    <select id="svc">
+      <option value="ig_followers">Instagram Followers</option>
+      <option value="yt_views">YouTube Views</option>
+    </select>
+
+    <label>Target URL</label>
+    <input id="url" placeholder="https://example.com/..." />
+
+    <div class="row">
+      <div>
+        <label>Quantity</label>
+        <input id="qty" type="number" value="100" min="1" />
+      </div>
+      <div>
+        <label>Estimated Cost</label>
+        <input id="est" disabled />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="create">Create Order</button>
+      <button id="add5">+ $5 via Square</button>
+    </div>
+
+    <p id="msg" class="muted"></p>
+  </div>
+
+<script>
+const BASE = location.origin;
+const $ = (id)=>document.getElementById(id);
+
+async function api(path, opts={}, headers={}) {
+  const uid = $('uid').value.trim();
+  const email = $('email').value.trim();
+  const h = Object.assign({
+    'content-type':'application/json',
+    'x-user-id': uid,
+    'x-user-email': email
+  }, headers);
+  const r = await fetch(path, Object.assign({ headers: h }, opts));
+  const t = await r.text();
+  try { return { ok:r.ok, json: JSON.parse(t) }; } catch { return { ok:r.ok, text:t }; }
+}
+
+function cents(n){ return `$${(n/100).toFixed(2)}`; }
+
+async function refreshBalance() {
+  const r = await api(`${BASE}/api/wallet/get`);
+  if (r.ok && r.json && typeof r.json.balance_cents === 'number') {
+    $('bal').textContent = cents(r.json.balance_cents);
+  } else {
+    $('bal').textContent = '—';
+  }
+}
+
+async function estimate() {
+  // quick client estimate by fetching service price
+  const svc = $('svc').value;
+  const qty = Number($('qty').value || 0);
+  // simple static mapping; you can fetch from API instead
+  const price = { ig_followers: 100, yt_views: 50 }[svc] || 0; // cents per unit
+  $('est').value = cents(price * qty);
+}
+$('qty').addEventListener('input', estimate);
+$('svc').addEventListener('change', estimate);
+estimate();
+
+$('chk').onclick = refreshBalance;
+
+$('create').onclick = async () => {
+  $('msg').textContent = 'Placing order...';
+  const body = {
+    service_code: $('svc').value,
+    target_url: $('url').value.trim(),
+    quantity: Number($('qty').value || 0)
+  };
+  const r = await api(`${BASE}/api/orders/create`, { method:'POST', body: JSON.stringify(body) });
+  if (r.ok && r.json?.ok) {
+    $('msg').textContent = `✅ Order ${r.json.order_id} queued. New balance ${cents(r.json.new_balance_cents)}.`;
+    $('msg').className = 'ok';
+    refreshBalance();
+  } else {
+    const err = r.json?.error || r.text || 'error';
+    $('msg').textContent = `❌ ${err}`;
+    $('msg').className = 'err';
+  }
+};
+
+$('add5').onclick = async () => {
+  $('msg').textContent = 'Creating Square link...';
+  const r = await api(`${BASE}/api/deposits/create-square`, {
+    method:'POST',
+    body: JSON.stringify({ amount_cents: 500 })
+  });
+  const url = r.json?.url;
+  if (url) {
+    $('msg').innerHTML = `Link created: <a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+  } else {
+    $('msg').textContent = 'Could not create link';
+  }
+};
+</script>
+</body>
+</html>
