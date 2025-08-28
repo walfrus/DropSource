@@ -1,96 +1,100 @@
-// /api/wallet/get.ts  — self-contained, no local imports
-import { createClient } from '@supabase/supabase-js';
-
+// /api/wallet/get.ts — REST-only (no supabase-js)
 export const config = { runtime: 'nodejs18.x' };
 
-function sendJson(res: any, code: number, obj: any) {
+function send(res: any, code: number, obj: any) {
   res.statusCode = code;
-  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
-  // help caches avoid mixing users (defensive)
   res.setHeader('Vary', 'x-user-id, x-user-email');
   res.end(JSON.stringify(obj));
 }
 
-function getUserFromHeaders(req: any) {
-  const id = (req.headers?.['x-user-id'] ?? '').toString().trim();
-  const emailHeader = req.headers?.['x-user-email'];
-  const email = typeof emailHeader === 'string' ? emailHeader.trim() : null;
-  if (!id) return null;
-  return { id, email };
+function getUser(req: any) {
+  const id = String(req.headers?.['x-user-id'] || '').trim();
+  const emailRaw = req.headers?.['x-user-email'];
+  const email = typeof emailRaw === 'string' ? emailRaw.trim() : null;
+  return id ? { id, email } : null;
+}
+
+function envOrThrow(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env ${name}`);
+  return v;
+}
+
+async function sfetch(path: string, init: any = {}) {
+  const base = envOrThrow('SUPABASE_URL');
+  const key = envOrThrow('SUPABASE_SERVICE_ROLE_KEY');
+  const url = `${base.replace(/\/$/, '')}/rest/v1${path}`;
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    ...init.headers,
+  } as Record<string, string>;
+  const res = await fetch(url, { ...init, headers });
+  const text = await res.text();
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+  return { res, json, text };
 }
 
 export default async function handler(req: any, res: any) {
-  // Only GET
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
-    return sendJson(res, 405, { error: 'method_not_allowed' });
+    return send(res, 405, { error: 'method_not_allowed' });
   }
 
-  // Debug switch: if you send header x-debug-return-error: 1, we will echo the real error text
   const debugEcho = String(req.headers?.['x-debug-return-error'] || '') === '1';
 
   try {
-    const user = getUserFromHeaders(req);
-    if (!user) return sendJson(res, 401, { error: 'no user' });
+    const user = getUser(req);
+    if (!user) return send(res, 401, { error: 'no user' });
 
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) {
-      throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-    }
+    // 1) Upsert user row (idempotent)
+    await sfetch('/users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({ id: user.id, email: user.email ?? null }),
+    });
 
-    // Service role client (server-only). No RLS issues.
-    const sb = createClient(url, key, { auth: { persistSession: false } });
+    // 2) Read wallet
+    let { res: r1, json: j1 } = await sfetch(`/wallets?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,balance_cents,currency&limit=1`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
 
-    // Ensure user row exists (idempotent)
-    {
-      const up = await sb
-        .from('users')
-        .upsert({ id: user.id, email: user.email ?? null }, { onConflict: 'id' })
-        .select('id')
-        .single();
-      // ignore unique violation code 23505; throw others
-      if (up.error && up.error.code !== '23505') throw up.error;
-    }
-
-    // Read wallet; create if not exists
-    let w = (await sb
-      .from('wallets')
-      .select('user_id,balance_cents,currency')
-      .eq('user_id', user.id)
-      .maybeSingle()).data;
-
-    if (!w) {
-      const ins = await sb.from('wallets').insert({
-        user_id: user.id,
-        balance_cents: 0,
-        currency: 'usd',
+    // If not present, create then re-read
+    if (!Array.isArray(j1) || j1.length === 0) {
+      await sfetch('/wallets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ user_id: user.id, balance_cents: 0, currency: 'usd' }),
       });
-      if (ins.error) throw ins.error;
-
-      const reread = await sb
-        .from('wallets')
-        .select('user_id,balance_cents,currency')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (reread.error) throw reread.error;
-      w = reread.data!;
+      const again = await sfetch(`/wallets?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,balance_cents,currency&limit=1`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      r1 = again.res; j1 = again.json;
     }
 
-    // Normalize balance to a non-negative integer
-    const centsNum = Number(w?.balance_cents ?? 0);
+    const row = Array.isArray(j1) ? j1[0] : null;
+    const centsNum = Number(row?.balance_cents ?? 0);
     const cents = Number.isFinite(centsNum) ? Math.max(0, Math.trunc(centsNum)) : 0;
 
-    return sendJson(res, 200, {
+    return send(res, 200, {
       balance_cents: cents,
-      currency: String(w?.currency ?? 'usd').toLowerCase(),
+      currency: String(row?.currency ?? 'usd').toLowerCase(),
     });
   } catch (e: any) {
     const msg = e?.message || String(e);
-    // Never crash the function; always return JSON so Vercel doesn’t show FUNCTION_INVOCATION_FAILED
-    if (debugEcho) return sendJson(res, 200, { debug: 'handler_error', err: msg });
-    return sendJson(res, 200, { error: 'server_error' });
+    if (debugEcho) return send(res, 200, { debug: 'handler_error', err: msg });
+    return send(res, 200, { error: 'server_error' });
   }
 }
