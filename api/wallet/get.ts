@@ -1,5 +1,5 @@
+// @ts-nocheck
 // /api/wallet/get.ts — REST-only (no supabase-js)
-export const config = { runtime: 'nodejs18.x' };
 
 function send(res: any, code: number, obj: any) {
   res.statusCode = code;
@@ -32,7 +32,8 @@ async function sfetch(path: string, init: any = {}) {
     Authorization: `Bearer ${key}`,
     ...init.headers,
   } as Record<string, string>;
-  const res = await fetch(url, { ...init, headers });
+  const F = (globalThis as any).fetch || (await import('node-fetch')).default;
+  const res = await F(url, { ...init, headers });
   const text = await res.text();
   let json: any = null;
   try { json = text ? JSON.parse(text) : null; } catch {}
