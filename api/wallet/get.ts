@@ -73,7 +73,7 @@ export default async function handler(req: any, res: any) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
+          Prefer: 'resolution=merge-duplicates,return-minimal',
         },
         body: JSON.stringify({ user_id: user.id, balance_cents: 0, currency: 'usd' }),
       });
