@@ -2,7 +2,7 @@
 // Minimal DB health-check endpoint (no Square logic here).
 // Verifies Supabase service-role connectivity and write perms.
 
-import { sb } from '../../lib/db.js';
+import { createClient } from '@supabase/supabase-js';
 
 // Local no-store helper to avoid import cycles / TS path issues
 function noStore(res: any) {
@@ -23,37 +23,57 @@ export default async function handler(req: any, res: any) {
   try {
     noStore(res);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+    const srv = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const anon = process.env.SUPABASE_ANON_KEY || '';
 
     const out: any = {
       ok: true,
       time: new Date().toISOString(),
-      supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || null,
+      supabase_url: url || null,
+      have_env: { url: !!url, service_role: !!srv, anon: !!anon },
+      node: process.version,
     };
 
+    // Lazy-create client so this route never crashes when env is missing
+    let sb: any = null;
+    if (url && (srv || anon)) {
+      sb = createClient(url, srv || anon, { auth: { persistSession: false } });
+    }
+
     // Read check (wallets count)
-    try {
-      const { count, error } = await sb
-        .from('wallets')
-        .select('*', { count: 'exact', head: true });
-      out.wallets_count = typeof count === 'number' ? count : null;
-      if (error) out.wallets_error = String(error?.message || error);
-    } catch (e: any) {
-      out.wallets_error = String(e?.message || e);
+    if (sb) {
+      try {
+        const { count, error } = await sb
+          .from('wallets')
+          .select('*', { count: 'exact', head: true });
+        out.wallets_count = typeof count === 'number' ? count : null;
+        if (error) out.wallets_error = String(error?.message || error);
+      } catch (e: any) {
+        out.wallets_error = String(e?.message || e);
+      }
+    } else {
+      out.wallets_error = 'no_supabase_client';
     }
 
     // Write check (insert into webhook_logs)
-    try {
-      const { error } = await sb.from('webhook_logs').insert({
-        source: 'debug',
-        event: 'db_ping',
-        http_status: 200,
-        payload: { note: 'hello from /api/debug/db-ping' }
-      });
-      out.can_write_webhook_logs = !error;
-      if (error) out.webhook_logs_error = String(error?.message || error);
-    } catch (e: any) {
+    if (sb) {
+      try {
+        const { error } = await sb.from('webhook_logs').insert({
+          source: 'debug',
+          event: 'db_ping',
+          http_status: 200,
+          payload: { note: 'hello from /api/debug/db-ping' }
+        });
+        out.can_write_webhook_logs = !error;
+        if (error) out.webhook_logs_error = String(error?.message || error);
+      } catch (e: any) {
+        out.can_write_webhook_logs = false;
+        out.webhook_logs_error = String(e?.message || e);
+      }
+    } else {
       out.can_write_webhook_logs = false;
-      out.webhook_logs_error = String(e?.message || e);
+      out.webhook_logs_error = 'no_supabase_client';
     }
 
     // HEAD returns headers only
