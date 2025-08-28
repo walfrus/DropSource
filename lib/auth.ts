@@ -13,8 +13,20 @@ export function getUser(req: any): { id: string; email: string | null } | null {
   };
 
   const q = (key: string): string => {
-    const v = (req?.query?.[key] ?? req?.query?.[key.toLowerCase()]) as string | string[] | undefined;
-    return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
+    // 1) Prefer framework-provided req.query (Next/Vercel, Express adapters)
+    const qsrc = req?.query as Record<string, unknown> | undefined;
+    if (qsrc) {
+      const raw = (qsrc[key] ?? (typeof key === 'string' ? (qsrc[key.toLowerCase?.() as any] ?? '') : '')) as unknown;
+      const val = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '');
+      if (typeof val === 'string' && val) return val;
+    }
+    // 2) Fallback: parse from raw URL (pure Node runtimes)
+    try {
+      const url = new URL(req?.url || '', 'http://localhost');
+      return url.searchParams.get(key) || '';
+    } catch {
+      return '';
+    }
   };
 
   // merge cookies from header and any framework-provided req.cookies
@@ -35,13 +47,27 @@ export function getUser(req: any): { id: string; email: string | null } | null {
   const cookiesFromRuntime = (req?.cookies && typeof req.cookies === 'object') ? req.cookies : {};
   const cookies: Record<string, string> = { ...cookiesFromHeader, ...cookiesFromRuntime };
 
-  // optional combo header: x-user: "<id>:<email>" or "<id>|<email>"
+  // optional combo header: x-user as JSON {"id":"...","email":"..."} OR "<id>:<email>" / "<id>|<email>"
   let xuId = '', xuEmail = '';
   const xUser = hdr('x-user');
   if (xUser) {
-    const parts = String(xUser).split(/[|:,]/);
-    xuId = (parts[0] ?? '').trim();
-    xuEmail = (parts[1] ?? '').trim();
+    const s = String(xUser).trim();
+    if (s.startsWith('{') && s.endsWith('}')) {
+      try {
+        const obj = JSON.parse(s);
+        if (obj && typeof obj === 'object') {
+          xuId = String((obj as any).id ?? '').trim();
+          xuEmail = String((obj as any).email ?? '').trim();
+        }
+      } catch {
+        // fall through to split parsing below
+      }
+    }
+    if (!xuId && !xuEmail) {
+      const parts = s.split(/[|:,]/);
+      xuId = (parts[0] ?? '').trim();
+      xuEmail = (parts[1] ?? '').trim();
+    }
   }
 
   const rawId =

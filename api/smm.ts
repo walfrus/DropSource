@@ -1,6 +1,8 @@
 // api/smm.ts — single endpoint for services / order / balance / status
 // No external types/imports needed
 
+export const config = { runtime: 'nodejs' };
+
 // ---- env helpers ----
 function numFromEnv(name: string, def: number): number {
   const v = process.env[name];
@@ -29,19 +31,21 @@ const PRICE_MAX_PER_1K = numFromEnv('PRICE_MAX_PER_1K', 0);     // optional ceil
 
 export default async function handler(req: any, res: any) {
   try {
+    const url = new URL(req.url || '/', 'http://localhost');
+
     if (!PANEL_API_URL || !PANEL_API_KEY) {
       return res.status(500).json({ error: "Missing PANEL_API_URL/SMM_API or PANEL_API_KEY/SMM_API_KEY" });
     }
 
     if (req.method === "GET") {
-      const action = String(req.query.action || "");
+      const action = String(url.searchParams.get('action') || "");
 
       if (action === "services") {
         const raw = await callPanel({ action: "services" });
         // Panel *usually* returns an array. Sometimes it can wrap or error.
         const list = Array.isArray(raw) ? raw : (raw?.services ?? []);
-        const q = String(req.query.q || "").toLowerCase();
-        const cat = String(req.query.category || "").toLowerCase();
+        const q = String(url.searchParams.get('q') || "").toLowerCase();
+        const cat = String(url.searchParams.get('category') || "").toLowerCase();
 
         const services = list
           .filter(Boolean)
@@ -63,7 +67,7 @@ export default async function handler(req: any, res: any) {
       }
 
       if (action === "status") {
-        const order = String(req.query.order || "");
+        const order = String(url.searchParams.get('order') || "");
         if (!order) return res.status(400).json({ error: "Missing order id" });
         const data = await callPanel({ action: "status", order });
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -75,7 +79,8 @@ export default async function handler(req: any, res: any) {
     }
 
     if (req.method === "POST") {
-      const { action, service, link, quantity, runs, interval } = req.body || {};
+      const body = await readJsonBody(req);
+      const { action, service, link, quantity, runs, interval } = body || {};
 
       if (action === "add") {
         const svcId = Number(service);
@@ -106,6 +111,28 @@ export default async function handler(req: any, res: any) {
 }
 
 // ---- helpers ----
+
+async function readJsonBody(req: any): Promise<any> {
+  try {
+    if (req.body != null) {
+      if (typeof req.body === 'string') {
+        try { return JSON.parse(req.body); } catch { return {}; }
+      }
+      return req.body;
+    }
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      req.on('data', (c: any) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+      req.on('end', () => resolve());
+      req.on('error', reject);
+    });
+    if (!chunks.length) return {};
+    const raw = Buffer.concat(chunks).toString('utf8');
+    try { return JSON.parse(raw); } catch { return {}; }
+  } catch {
+    return {};
+  }
+}
 
 async function callPanel(params: Record<string, string | number>) {
   const form = new URLSearchParams({ key: PANEL_API_KEY, ...objToStr(params) });

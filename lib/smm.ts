@@ -117,21 +117,49 @@ export async function ensureUserAndWallet(
 export async function creditDepositByPaymentLinkId(
   sb: SupabaseClient,
   paymentLinkId: string
-): Promise<{ ok: boolean; error?: string; already?: boolean; user_id?: string; deposit_id?: string; amount_cents?: number }>{
+): Promise<{
+  ok: boolean;
+  error?: string;
+  already?: boolean;
+  user_id?: string;
+  deposit_id?: string;
+  amount_cents?: number;
+}> {
   if (!paymentLinkId) return { ok: false, error: 'missing paymentLinkId' };
 
+  // Determine the "success" status your DB allows (env overrides), plus synonyms
+  const successStatus = (process.env.DEPOSIT_SUCCESS_STATUS || 'confirmed').toLowerCase();
+  const PAID_STATUSES = new Set(['paid', 'completed', 'confirmed', 'succeeded', 'success', 'ok', 'done', successStatus]);
+
+  // 1) fetch the deposit row linked to this Square payment link id
   const depSel = await sb.from('deposits').select('*').eq('provider_id', paymentLinkId).single();
   const dep = depSel.data as any;
   if (!dep) return { ok: false, error: 'deposit not found' };
-  if (String(dep.status).toLowerCase() === 'paid') return { ok: true, already: true, user_id: dep.user_id, deposit_id: dep.id, amount_cents: dep.amount_cents };
 
-  const upd = await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
+  // If it's already in a finalized/paid state, be idempotent
+  const current = String(dep.status || '').toLowerCase();
+  if (PAID_STATUSES.has(current)) {
+    return {
+      ok: true,
+      already: true,
+      user_id: dep.user_id,
+      deposit_id: dep.id,
+      amount_cents: dep.amount_cents
+    };
+  }
+
+  // 2) mark deposit as successful using the allowed status
+  const upd = await sb.from('deposits').update({ status: successStatus }).eq('id', dep.id);
   if (upd.error) return { ok: false, error: upd.error.message };
 
-  // ensure wallet exists then add funds
+  // 3) ensure wallet exists and credit the amount
   const wSel = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
   if (!wSel.data) {
-    try { await sb.from('wallets').insert({ user_id: dep.user_id, balance_cents: 0, currency: 'usd' }); } catch {}
+    try {
+      await sb.from('wallets').insert({ user_id: dep.user_id, balance_cents: 0, currency: 'usd' });
+    } catch {
+      // ignore create race
+    }
   }
   const cur = Number(wSel.data?.balance_cents ?? 0);
   const next = cur + Number(dep.amount_cents || 0);

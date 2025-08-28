@@ -2,6 +2,8 @@
 import { readRawBody, crypto } from '../../lib/smm.js';
 import { sb } from '../../lib/db.js';
 
+export const config = { runtime: 'nodejs' };
+
 type AnyObj = Record<string, any>;
 
 // tiny logger that never throws
@@ -77,20 +79,18 @@ export default async function handler(req: any, res: any) {
     }
 
     // idempotency guard — do not double credit
-    if (String(dep.status).toLowerCase() === 'paid') {
-      await safeLog({ source: 'coinbase', event: 'ALREADY_PAID', http_status: 200, payload: { deposit_id: dep.id } });
-      res.statusCode = 200; noStore(res); res.end('already');
-      return;
+    {
+      const st = String(dep.status).toLowerCase();
+      if (st === 'confirmed' || st === 'paid') {
+        await safeLog({ source: 'coinbase', event: 'ALREADY_CONFIRMED', http_status: 200, payload: { deposit_id: dep.id, status: st } });
+        res.statusCode = 200; noStore(res); res.end('already');
+        return;
+      }
     }
 
     if (type === 'charge:confirmed' || type === 'charge:resolved') {
-      // mark paid (do not write non-existent provider_payload column)
-      const upd = await sb.from('deposits').update({ status: 'paid' }).eq('id', dep.id);
-      if (upd.error) {
-        await safeLog({ source: 'coinbase', event: 'MARK_PAID_FAIL', http_status: 200, payload: { deposit_id: dep.id, err: upd.error.message } });
-        res.statusCode = 200; noStore(res); res.end('mark fail');
-        return;
-      }
+      const successStatus = (process.env.DEPOSIT_SUCCESS_STATUS || 'confirmed').toLowerCase();
+      const upd = await sb.from('deposits').update({ status: successStatus }).eq('id', dep.id);
 
       // credit wallet (ensure row exists, then update)
       const wSel = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
@@ -108,7 +108,7 @@ export default async function handler(req: any, res: any) {
 
       await safeLog({ source: 'coinbase', event: 'WALLET_CREDITED', http_status: 200, payload: { user_id: dep.user_id, amount_cents: dep.amount_cents } });
     } else if (type === 'charge:failed') {
-      await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
+      await sb.from('deposits').update({ status: 'failed' }).eq('id', dep.id);
     } else {
       // non-terminal events — just store latest payload
     }

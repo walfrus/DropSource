@@ -4,6 +4,8 @@
 // - No-cache headers so you always see fresh state
 // - Emits build/runtime hints (env, region, commit)
 
+export const config = { runtime: 'nodejs' };
+
 export default function handler(req: any, res: any) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.statusCode = 405;
@@ -18,6 +20,8 @@ export default function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
 
   const ts = Date.now();
+  const url = new URL(req.url || '/', 'http://localhost');
+  const echo = url.searchParams.get('echo');
   const body = {
     ok: true,
     ts,
@@ -25,7 +29,7 @@ export default function handler(req: any, res: any) {
     env: (process.env.SQUARE_ENV || 'sandbox').toLowerCase(),
     region: process.env.VERCEL_REGION || process.env.AWS_REGION || null,
     commit: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null,
-    echo: req.query?.echo ?? null,
+    echo,
   } as const;
 
   if (req.method === 'HEAD') {
