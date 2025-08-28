@@ -1,7 +1,7 @@
 // api/smm.ts — single endpoint for services / order / balance / status
 // No external imports required
 
-export const config = { runtime: 'nodejs18.x' };
+export const config = { runtime: 'nodejs' };
 
 // ---- tiny response helper (avoid res.status().json in pure Node funcs) ----
 function sendJson(res: any, code: number, obj: any, headers: Record<string,string> = {}) {

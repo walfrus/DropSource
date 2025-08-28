@@ -4,7 +4,7 @@
 // - No-cache headers so you always see fresh state
 // - Emits build/runtime hints (env, region, commit)
 
-export const config = { runtime: 'nodejs18.x' };
+export const config = { runtime: 'nodejs' };
 
 export default function handler(req: any, res: any) {
   try {
