@@ -1,5 +1,6 @@
 // /api/deposits/webhook-square.ts
-import { readRawBody, crypto } from '../../lib/smm.js';
+import { readRawBody } from '../../lib/smm.js';
+import * as crypto from 'node:crypto';
 import { sb } from '../../lib/db.js';
 
 export const config = { runtime: 'nodejs' };
