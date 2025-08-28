@@ -76,3 +76,5 @@ export default async function handler(req: any, res: any) {
     }));
   }
 }
+
+export const config = { runtime: 'nodejs' };
