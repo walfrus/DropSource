@@ -52,7 +52,7 @@ export default async function handler(req: any, res: any) {
     if (!user) return send(res, 401, { error: 'no user' });
 
     // 1) Upsert user row (idempotent)
-    await sfetch('/users', {
+    await sfetch('/users?on_conflict=id', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,11 +69,11 @@ export default async function handler(req: any, res: any) {
 
     // If not present, create then re-read
     if (!Array.isArray(j1) || j1.length === 0) {
-      await sfetch('/wallets', {
+      await sfetch('/wallets?on_conflict=user_id', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return-minimal',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
         },
         body: JSON.stringify({ user_id: user.id, balance_cents: 0, currency: 'usd' }),
       });
