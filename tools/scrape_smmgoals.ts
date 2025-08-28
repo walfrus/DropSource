@@ -6,7 +6,8 @@
   ENV:
     MARKUP               -> multiplier (default 1.20)
     SMMGOALS_URLS        -> comma-separated list of category/listing URLs to visit (e.g. https://smmgoal.com/services)
-    SMMGOAL_EMAIL        -> login email (required if the page requires auth)
+    SMMGOAL_USERNAME     -> login username (preferred; use this if panel uses username)
+    SMMGOAL_EMAIL        -> (optional) fallback if the panel specifically uses email
     SMMGOAL_PASSWORD     -> login password (required if the page requires auth)
     SMMGOAL_BASE         -> optional base URL (default https://smmgoal.com)
     HEADLESS             -> set to "0" to watch the browser, defaults to headless
@@ -68,11 +69,11 @@ async function smartClick(page: Page, selector: string) {
 
 async function ensureLoggedIn(page: Page) {
   const BASE = process.env.SMMGOAL_BASE?.replace(/\/$/, '') || 'https://smmgoal.com';
-  const email = process.env.SMMGOAL_EMAIL || '';
+  const username = process.env.SMMGOAL_USERNAME || process.env.SMMGOAL_EMAIL || '';
   const password = process.env.SMMGOAL_PASSWORD || '';
 
   // If no creds, just try to visit directly; some panels allow read-only access
-  if (!email || !password) return;
+  if (!username || !password) return;
 
   // Try a few likely login paths
   const loginPaths = ['/login', '/auth/login', '/signin', '/account/login'];
@@ -90,12 +91,12 @@ async function ensureLoggedIn(page: Page) {
   }
 
   // Fill the form defensively
-  const emailSel = 'input[type="email"], input[name="email" i], #email';
+  const userSel = 'input[name="username" i], #username, input[type="text"], input[type="email"], input[name="email" i], #email';
   const passSel  = 'input[type="password"], input[name="password" i], #password';
   const btnSel   = 'button[type="submit"], button:has-text("Sign in"), button:has-text("Login"), .btn-primary';
 
-  if (await page.locator(emailSel).count()) {
-    await page.fill(emailSel, email).catch(() => {});
+  if (await page.locator(userSel).count()) {
+    await page.fill(userSel, username).catch(() => {});
   }
   if (await page.locator(passSel).count()) {
     await page.fill(passSel, password).catch(() => {});
