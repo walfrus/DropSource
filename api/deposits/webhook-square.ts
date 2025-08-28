@@ -1,78 +1,87 @@
-// /api/deposits/webhook-square.ts
-import { readRawBody } from '../../lib/smm.js';
+// /api/wallet/get.ts
 import { sb } from '../../lib/db.js';
-import * as crypto from 'node:crypto';
+import { getUser } from '../../lib/auth.js';
+import { ensureUserAndWallet } from '../../lib/smm.js';
 
 export const config = { runtime: 'nodejs18.x' };
 
-function json(res: any, code: number, obj: any) {
+function sendJson(res: any, code: number, obj: any) {
   res.statusCode = code;
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify(obj));
 }
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
-
   try {
-    const skipVerify = String(req.headers['x-debug-no-verify'] || '') === '1';
-    const raw = await readRawBody(req);
+    const user = getUser(req);
+    if (!user) return sendJson(res, 401, { error: 'no user' });
 
-    if (!skipVerify) {
-      const headerSig = String(req.headers['x-square-hmacsha256'] || '');
-      const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
-      if (!headerSig || !key) return json(res, 400, { error: 'missing signature' });
-      const expected = crypto.createHmac('sha256', key).update(raw).digest('base64');
-      if (headerSig !== expected) return json(res, 400, { error: 'bad signature' });
-    }
+    await ensureUserAndWallet(sb, user);
 
-    const body = JSON.parse(raw.toString('utf8') || '{}');
-    const type = String(body?.type || body?.event_type || '').toUpperCase();
-    const obj = body?.data?.object || body?.data || {};
+    const { data: w, error } = await sb
+      .from('wallets')
+      .select('balance_cents,currency')
+      .eq('user_id', user.id)
+      .single();
 
-    // Extract payment link id from a few possible shapes
-    const paymentLinkId =
-      obj?.payment_link?.id ||
-      obj?.payment_link_id ||
-      obj?.id ||
-      body?.data?.id ||
-      '';
+    if (error) return sendJson(res, 400, { error: error.message });
 
-    const payment = obj?.payment || obj?.object?.payment || {};
-    const status = String(payment?.status || '').toUpperCase();
-
-    if (!paymentLinkId) return json(res, 200, { ok: true, note: 'no payment_link id' });
-
-    // Find matching deposit by provider_id (we saved the Square payment_link id there)
-    const { data: dep, error: depErr } = await sb.from('deposits').select('*').eq('provider_id', paymentLinkId).single();
-    if (depErr || !dep) return json(res, 200, { ok: true, note: 'no deposit', payment_link_id: paymentLinkId });
-
-    const SUCCESS_STATUS = String(process.env.DEPOSIT_SUCCESS_STATUS || 'completed').toLowerCase();
-
-    const isCompleted = status === 'COMPLETED' || type.includes('COMPLETED') || type.startsWith('PAYMENT.');
-    if (isCompleted) {
-      // mark deposit as successful
-      const up1 = await sb.from('deposits').update({ status: SUCCESS_STATUS }).eq('id', dep.id).select('id').single();
-      if (up1.error) return json(res, 200, { debug: 'mark_paid_failed', err: up1.error.message, dep: { id: dep.id, status: dep.status, provider_id: dep.provider_id } });
-
-      // credit wallet
-      const { data: w } = await sb.from('wallets').select('balance_cents').eq('user_id', dep.user_id).single();
-      const next = (w?.balance_cents || 0) + Number(dep.amount_cents || 0);
-      const up2 = await sb.from('wallets').update({ balance_cents: next }).eq('user_id', dep.user_id);
-      if (up2.error) return json(res, 200, { debug: 'wallet_update_failed', err: up2.error.message });
-
-      return json(res, 200, { ok: true });
-    } else {
-      // mark canceled/failed if we can detect it; otherwise ignore
-      if (status === 'CANCELED' || type.includes('CANCELED') || type.includes('FAILED')) {
-        await sb.from('deposits').update({ status: 'canceled' }).eq('id', dep.id);
-      }
-      return json(res, 200, { ok: true, note: 'ignored status', status });
-    }
-
+    return sendJson(res, 200, {
+      balance_cents: w?.balance_cents ?? 0,
+      currency: w?.currency ?? 'usd',
+    });
   } catch (e: any) {
     const dbg = String(req.headers['x-debug-return-error'] || '') === '1';
-    if (dbg) return json(res, 200, { debug: 'handler_error', err: String(e?.message || e) });
-    res.statusCode = 200; res.end('ok');
+    if (dbg) return sendJson(res, 200, { debug: 'handler_error', err: String(e?.message || e) });
+    // Don't 500 on serverless; return ok so the platform doesn't show a big red error
+    res.statusCode = 200;
+    res.end('ok');
+  }
+}
+// lib/smm.js
+// Minimal, safe helpers used by multiple API routes
+
+/** Read raw request body into a Buffer (no JSON parsing). */
+export async function readRawBody(req) {
+  return await new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', (err) => reject(err));
+  });
+}
+
+/** Read JSON body; returns {} if invalid/missing. */
+export async function readJsonBody(req) {
+  const raw = await readRawBody(req);
+  try {
+    const str = raw.toString('utf8') || '';
+    return str ? JSON.parse(str) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Idempotently ensure user & wallet rows exist. */
+export async function ensureUserAndWallet(sb, user) {
+  // users upsert
+  await sb.from('users')
+    .upsert({ id: user.id, email: user.email ?? null })
+    .select('id')
+    .single();
+
+  // wallet ensure-if-missing
+  const { data: rows } = await sb
+    .from('wallets')
+    .select('id')
+    .eq('user_id', user.id)
+    .limit(1);
+
+  if (!rows || rows.length === 0) {
+    await sb.from('wallets').insert({
+      user_id: user.id,
+      balance_cents: 0,
+      currency: 'usd',
+    });
   }
 }
