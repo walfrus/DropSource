@@ -47,7 +47,7 @@ export default async function handler(req: any, res: any) {
     const { data: dep, error: depErr } = await sb.from('deposits').select('*').eq('provider_id', paymentLinkId).single();
     if (depErr || !dep) return json(res, 200, { ok: true, note: 'no deposit', payment_link_id: paymentLinkId });
 
-    const SUCCESS_STATUS = String(process.env.DEPOSIT_SUCCESS_STATUS || 'confirmed').toLowerCase();
+    const SUCCESS_STATUS = String(process.env.DEPOSIT_SUCCESS_STATUS || 'completed').toLowerCase();
 
     const isCompleted = status === 'COMPLETED' || type.includes('COMPLETED') || type.startsWith('PAYMENT.');
     if (isCompleted) {
