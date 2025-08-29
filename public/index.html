@@ -15,6 +15,19 @@
     input,select{flex:1;min-width:180px}
     button{background:var(--btn);color:var(--btn-fg);cursor:pointer}
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;max-width:1200px;margin:12px auto}
+    /* Masonry layout for service cards to prevent sibling cards expanding */
+    .grid.cards{
+      display:block;              /* use CSS columns */
+      column-width:320px;         /* target column width */
+      column-gap:12px;
+    }
+    .grid.cards .card{
+      display:inline-block;
+      width:100%;
+      break-inside:avoid;         /* avoid column breaks inside cards */
+    }
+    /* Fallback for browsers that keep grid semantics */
+    .grid{ align-items:start; }
     .card{
   --plat: var(--brand);
   background:var(--card);
@@ -298,7 +311,7 @@ catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Oth
                 </div>
                 <div class="muted">Toggle</div>
               </div>
-              <div class="body"><div class="grid"></div></div>
+              <div class="body"><div class="grid cards"></div></div>
             `;
             sec.querySelector('.head').addEventListener('click', ()=>sec.classList.toggle('open'));
 
