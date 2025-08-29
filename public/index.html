@@ -91,11 +91,6 @@ details[open] summary{opacity:.9}
   <div id="toolbar">
     <input id="q" placeholder="Search services…" />
     <select id="cat"><option value="">All platforms</option></select>
-    <select id="source">
-      <option value="merged">All sources</option>
-      <option value="api">DropSource only</option>
-      <option value="csv">SMMGoal CSV only</option>
-    </select>
     <button id="reload">Reload</button>
     <button id="expandAll">Expand all</button>
     <button id="collapseAll">Collapse all</button>
@@ -126,12 +121,10 @@ details[open] summary{opacity:.9}
         const elQ = document.getElementById('q');
         const elCat = document.getElementById('cat');
         const elWrap = document.getElementById('wrap');
-        const elSource = document.getElementById('source');
         document.getElementById('reload').onclick = load;
         document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
         document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
         elQ.oninput = load; elCat.onchange = load;
-        elSource.onchange = load;
         // keep only one <details> open on the whole page
         document.addEventListener('toggle', (ev) => {
           const det = ev.target;
@@ -253,19 +246,10 @@ details[open] summary{opacity:.9}
           return {label, chips};
         }
 
-        // -------- unified data source (API and/or CSV) ----------
-        async function fetchServices(source) {
-          if (source === 'api') {
-            return await fetchApiServices();
-          }
-          if (source === 'csv') {
-            return await fetchCsvServices();
-          }
-          // merged
-          const [api, csv] = await Promise.allSettled([fetchApiServices(), fetchCsvServices()]);
-          const a = api.status === 'fulfilled' && Array.isArray(api.value) ? api.value : [];
-          const b = csv.status === 'fulfilled' && Array.isArray(csv.value) ? csv.value : [];
-          return mergeServices(a, b);
+        // -------- unified data source (CSV only) ----------
+        async function fetchServices() {
+          // CSV‑only mode per user preference
+          return await fetchCsvServices();
         }
 
         async function fetchApiServices() {
@@ -387,13 +371,13 @@ details[open] summary{opacity:.9}
 
         async function load(){
           try{
-            const raw = await fetchServices(elSource.value || 'merged');
+            const raw = await fetchServices();
             if (!Array.isArray(raw) || !raw.length) { showErr('No services found'); return; }
 
             // group by detected platform and base type
             const byPlat = new Map();
             for(const s of raw){
-              const plat = detectPlatform(`${s.category||''} ${s.name||''}`);
+              const plat = (s.category && s.category.trim()) ? s.category.trim() : detectPlatform(s.name||'');
               const type = getBaseType(s.name||'');
               if(!byPlat.has(plat)) byPlat.set(plat, new Map());
               const m = byPlat.get(plat); if(!m.has(type)) m.set(type, []);
