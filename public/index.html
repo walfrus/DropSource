@@ -388,15 +388,29 @@ details[open] summary{opacity:.9}
               catCard.className = 'card cat';
               catCard.style.setProperty('--plat', PLATFORM_COLORS[p] || PLATFORM_COLORS.Other);
               catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
-              catCard.innerHTML = `
-                <h3 style="display:flex;justify-content:space-between;align-items:center">
-                  <span>${escapeHtml(p)}</span>
-                  <span class="chip s gray">${countServices(m)} services</span>
-                </h3>
-                <div class="muted">Click to explore</div>
-              `;
+
+              const catH3 = document.createElement('h3');
+              catH3.style.display = 'flex';
+              catH3.style.justifyContent = 'space-between';
+              catH3.style.alignItems = 'center';
+
+              const catTitle = document.createElement('span');
+              catTitle.textContent = p; // using textContent, no HTML string
+
+              const catCount = document.createElement('span');
+              catCount.className = 'chip s gray';
+              catCount.textContent = `${countServices(m)} services`;
+
+              catH3.append(catTitle, catCount);
+
+              const catSub = document.createElement('div');
+              catSub.className = 'muted';
+              catSub.textContent = 'Click to explore';
+
+              catCard.replaceChildren(catH3, catSub);
+
               catCard.onclick = () => {
-                const sec = elWrap.querySelector(\`section[data-plat="\${p}"]\`);
+                const sec = elWrap.querySelector(`section[data-plat="${p}"]`);
                 if (sec) { sec.classList.add('open'); sec.scrollIntoView({behavior:'smooth', block:'start'}); }
               };
               catsGrid.appendChild(catCard);
@@ -410,22 +424,45 @@ details[open] summary{opacity:.9}
               const color = PLATFORM_COLORS[plat] || PLATFORM_COLORS.Other;
 
               const sec = document.createElement('section');
-              sec.className='section';
+              sec.className = 'section';
               sec.setAttribute('data-plat', plat);
               sec.style.setProperty('--plat', color);
-              sec.innerHTML = `
-                <div class="head">
-                  <div class="row">
-                    <span class="chip blue s">${plat}</span>
-                    <span class="chip gray s">${countServices(byType)} services</span>
-                  </div>
-                  <div class="muted">Toggle</div>
-                </div>
-                <div class="body"><div class="grid cards"></div></div>
-              `;
-              sec.querySelector('.head').addEventListener('click',()=>sec.classList.toggle('open'));
 
-              const grid = sec.querySelector('.grid');
+              // head
+              const head = document.createElement('div');
+              head.className = 'head';
+
+              const headRow = document.createElement('div');
+              headRow.className = 'row';
+
+              const chipPlat = document.createElement('span');
+              chipPlat.className = 'chip blue s';
+              chipPlat.textContent = plat;
+
+              const chipCount = document.createElement('span');
+              chipCount.className = 'chip gray s';
+              chipCount.textContent = `${countServices(byType)} services`;
+
+              headRow.append(chipPlat, chipCount);
+
+              const headToggle = document.createElement('div');
+              headToggle.className = 'muted';
+              headToggle.textContent = 'Toggle';
+
+              head.append(headRow, headToggle);
+
+              // body + grid
+              const body = document.createElement('div');
+              body.className = 'body';
+
+              const gridEl = document.createElement('div');
+              gridEl.className = 'grid cards';
+              body.appendChild(gridEl);
+
+              sec.replaceChildren(head, body);
+              head.addEventListener('click', () => sec.classList.toggle('open'));
+
+              const grid = gridEl;
               for(const [type, list0] of byType){
                 const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
                 if (!list.length) continue;
