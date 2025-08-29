@@ -64,8 +64,8 @@
 .variant .row:first-child > div{
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%
 }
-    .variant .price{white-space:nowrap}
-    .variants{max-height:60vh;overflow:auto;padding-right:4px}
+.variant .price{white-space:nowrap}
+.variants{max-height:60vh;overflow:auto;padding-right:4px}
 
 details summary{list-style:none}
 details[open] summary{opacity:.9}
@@ -92,6 +92,11 @@ details[open] summary{opacity:.9}
   <div id="toolbar">
     <input id="q" placeholder="Search services…" />
     <select id="cat"><option value="">All platforms</option></select>
+    <select id="source">
+      <option value="merged">All sources</option>
+      <option value="api">DropSource only</option>
+      <option value="csv">SMMGoal CSV only</option>
+    </select>
     <button id="reload">Reload</button>
     <button id="expandAll">Expand all</button>
     <button id="collapseAll">Collapse all</button>
@@ -101,313 +106,423 @@ details[open] summary{opacity:.9}
   <div id="errorOverlay"><pre id="errorText"></pre></div>
 
   <script>
-  (function(){
-    // hard fail reporter so a white page is impossible
-    function showFatal(err){
-      console.error(err);
-      const o=document.getElementById('errorOverlay');
-      const t=document.getElementById('errorText');
-      if(t){ t.textContent = (err && (err.stack||err.message||String(err))) || 'Unknown error'; }
-      if(o){ o.style.display='flex'; }
-    }
-    window.addEventListener('error', e=>showFatal(e.error||e.message||e));
-    window.addEventListener('unhandledrejection', e=>showFatal(e.reason||e));
+    // @ts-nocheck
+    /* eslint-disable */
+    // Inline DOM builder uses long template strings intentionally.
+    (function(){
+      // hard fail reporter so a white page is impossible
+      function showFatal(err){
+        console.error(err);
+        const o=document.getElementById('errorOverlay');
+        const t=document.getElementById('errorText');
+        if(t){ t.textContent = (err && (err.stack||err.message||String(err))) || 'Unknown error'; }
+        if(o){ o.style.display='flex'; }
+      }
+      window.addEventListener('error', e=>showFatal(e.error||e.message||e));
+      window.addEventListener('unhandledrejection', e=>showFatal(e.reason||e));
 
-    try{
-      // --- config & dom refs -------------------------------------------------------
-      const API = '/api/smm';
-      const elQ = document.getElementById('q');
-      const elCat = document.getElementById('cat');
-      const elWrap = document.getElementById('wrap');
-      document.getElementById('reload').onclick = load;
-      document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
-      document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
-      elQ.oninput = load; elCat.onchange = load;
-      // keep only one <details> open on the whole page
-      document.addEventListener('toggle', (ev) => {
-        const det = ev.target;
-        if (det && det.tagName === 'DETAILS' && det.open) {
-          document.querySelectorAll('details[open]').forEach(d => { if (d !== det) d.open = false; });
+      try{
+        // --- config & dom refs -------------------------------------------------------
+        const API = '/api/smm';
+        const elQ = document.getElementById('q');
+        const elCat = document.getElementById('cat');
+        const elWrap = document.getElementById('wrap');
+        const elSource = document.getElementById('source');
+        document.getElementById('reload').onclick = load;
+        document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
+        document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
+        elQ.oninput = load; elCat.onchange = load;
+        elSource.onchange = load;
+        // keep only one <details> open on the whole page
+        document.addEventListener('toggle', (ev) => {
+          const det = ev.target;
+          if (det && det.tagName === 'DETAILS' && det.open) {
+            document.querySelectorAll('details[open]').forEach(d => { if (d !== det) d.open = false; });
+          }
+        }, true);
+
+        function showErr(m){ console.error(m); const box=document.createElement('div'); box.className='loading'; box.textContent=m; elWrap.replaceChildren(box);} 
+        // --- platform meta -----------------------------------------------------------
+        const PLATFORM_COLORS = {
+          Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
+          TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
+          SoundCloud:'#FF5500', Threads:'#000000', VK:'#4C75A3', Twitch:'#9146FF',
+          Reddit:'#FF4500', Pinterest:'#E60023', LinkedIn:'#0A66C2', Snapchat:'#FFFC00',
+          Discord:'#5865F2', Shazam:'#0088FF', Vimeo:'#1AB7EA', Quora:'#B92B27',
+          Mixcloud:'#273A4B', 'OK.ru':'#F4731C', Audiomack:'#FFA200', Dailymotion:'#0066DC',
+          Reverbnation:'#000000', Tumblr:'#35465C', WhatsApp:'#25D366',
+          Website:'#59a0ff', Mobile:'#59a0ff', Crypto:'#f7931a', GeoTarget:'#59a0ff',
+          GoogleReviews:'#34a853', OwnWebsite:'#59a0ff', MaskedTraffic:'#59a0ff',
+          Podcast:'#ffa500', MassDM:'#59a0ff', Exchange:'#59a0ff', Other:'#59a0ff'
+        };
+
+        function detectPlatform(str=''){
+          const s = String(str).toLowerCase();
+          const map = [
+            ['Instagram',/(^|\b)(instagram|ig)\b/],
+            ['Telegram',/(^|\b)(telegram|tg)\b/],
+            ['Twitter',/(^|\b)twitter\b/],
+            ['X',/(^|\b)x\b(?![a-z])/],
+            ['TikTok',/(^|\b)(tiktok|tt)\b/],
+            ['Facebook',/(^|\b)(facebook|fb)\b/],
+            ['YouTube',/(^|\b)(youtube|yt|shorts)\b/],
+            ['Spotify',/spotify/],
+            ['SoundCloud',/soundcloud/],
+            ['Threads',/(^|\b)threads?\b/],
+            ['VK',/(^|\b)vk\b|vkontakte/],
+            ['Twitch',/twitch/],
+            ['Reddit',/reddit/],
+            ['Pinterest',/pinterest/],
+            ['LinkedIn',/(^|\b)linkedin\b/],
+            ['Snapchat',/snapchat/],
+            ['Discord',/discord/],
+            ['Shazam',/shazam/],
+            ['Vimeo',/vimeo/],
+            ['Quora',/quora/],
+            ['Mixcloud',/mixcloud/],
+            ['OK.ru',/ok\.?ru|(^|\b)ok\b/],
+            ['Audiomack',/audiomack/],
+            ['Dailymotion',/dailymotion/],
+            ['Reverbnation',/reverbnation/],
+            ['Tumblr',/tumblr/],
+            ['WhatsApp',/whatsapp/],
+            ['Website',/\bwebsite\b|web ?traffic|seo|site traffic|webtraffic/],
+            ['Mobile',/\bmobile\b|app installs?/],
+            ['Crypto',/crypto|bitcoin|\bbtc\b|\beth\b|ethereum/],
+            ['GeoTarget',/\bgeo|country|region|target/],
+            ['GoogleReviews',/google ?reviews?/],
+            ['OwnWebsite',/ownwebsite|own website/],
+            ['MaskedTraffic',/masked ?traffic/],
+            ['Podcast',/podcast/],
+            ['MassDM',/mass ?dm/],
+            ['Exchange',/exchange/],
+          ];
+          for (const [name,rx] of map) if (rx.test(s)) return name;
+          return 'Other';
         }
-      }, true);
 
-      function showErr(m){ console.error(m); const box=document.createElement('div'); box.className='loading'; box.textContent=m; elWrap.replaceChildren(box);} 
-
-      // --- platform meta -----------------------------------------------------------
-      const PLATFORM_COLORS = {
-        Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
-        TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
-        SoundCloud:'#FF5500', Threads:'#000000', VK:'#4C75A3', Twitch:'#9146FF',
-        Reddit:'#FF4500', Pinterest:'#E60023', LinkedIn:'#0A66C2', Snapchat:'#FFFC00',
-        Discord:'#5865F2', Shazam:'#0088FF', Vimeo:'#1AB7EA', Quora:'#B92B27',
-        Mixcloud:'#273A4B', 'OK.ru':'#F4731C', Audiomack:'#FFA200', Dailymotion:'#0066DC',
-        Reverbnation:'#000000', Tumblr:'#35465C', WhatsApp:'#25D366',
-        Website:'#59a0ff', Mobile:'#59a0ff', Crypto:'#f7931a', GeoTarget:'#59a0ff',
-        GoogleReviews:'#34a853', OwnWebsite:'#59a0ff', MaskedTraffic:'#59a0ff',
-        Podcast:'#ffa500', MassDM:'#59a0ff', Exchange:'#59a0ff', Other:'#59a0ff'
-      };
-
-      function detectPlatform(str=''){
-        const s = String(str).toLowerCase();
-        const map = [
-          ['Instagram',/(^|\b)(instagram|ig)\b/],
-          ['Telegram',/(^|\b)(telegram|tg)\b/],
-          ['Twitter',/(^|\b)twitter\b/],
-          ['X',/(^|\b)x\b(?![a-z])/],
-          ['TikTok',/(^|\b)(tiktok|tt)\b/],
-          ['Facebook',/(^|\b)(facebook|fb)\b/],
-          ['YouTube',/(^|\b)(youtube|yt|shorts)\b/],
-          ['Spotify',/spotify/],
-          ['SoundCloud',/soundcloud/],
-          ['Threads',/(^|\b)threads?\b/],
-          ['VK',/(^|\b)vk\b|vkontakte/],
-          ['Twitch',/twitch/],
-          ['Reddit',/reddit/],
-          ['Pinterest',/pinterest/],
-          ['LinkedIn',/(^|\b)linkedin\b/],
-          ['Snapchat',/snapchat/],
-          ['Discord',/discord/],
-          ['Shazam',/shazam/],
-          ['Vimeo',/vimeo/],
-          ['Quora',/quora/],
-          ['Mixcloud',/mixcloud/],
-          ['OK.ru',/ok\.?ru|(^|\b)ok\b/],
-          ['Audiomack',/audiomack/],
-          ['Dailymotion',/dailymotion/],
-          ['Reverbnation',/reverbnation/],
-          ['Tumblr',/tumblr/],
-          ['WhatsApp',/whatsapp/],
-          ['Website',/\bwebsite\b|web ?traffic|seo|site traffic|webtraffic/],
-          ['Mobile',/\bmobile\b|app installs?/],
-          ['Crypto',/crypto|bitcoin|\bbtc\b|\beth\b|ethereum/],
-          ['GeoTarget',/\bgeo|country|region|target/],
-          ['GoogleReviews',/google ?reviews?/],
-          ['OwnWebsite',/ownwebsite|own website/],
-          ['MaskedTraffic',/masked ?traffic/],
-          ['Podcast',/podcast/],
-          ['MassDM',/mass ?dm/],
-          ['Exchange',/exchange/],
+        const TYPE_PATTERNS = [
+          ['Followers', /follows?|followers?|subs?(cribers?)?/i],
+          ['Likes', /likes?/i],
+          ['Views', /views?|plays?|watch(?: ?time)?/i],
+          ['Comments', /comments?/i],
+          ['Saves', /saves?/i],
+          ['Shares', /shares?|reposts?/i],
+          ['Impressions', /impressions?/i],
+          ['Votes', /votes?|poll/i],
+          ['Members', /members?/i],
+          ['Mentions', /mentions?/i],
+          ['Story', /story|stories/i],
+          ['Live', /live\b/i],
+          ['Traffic', /traffic|visits?/i],
+          ['Other', /.*/]
         ];
-        for (const [name,rx] of map) if (rx.test(s)) return name;
-        return 'Other';
-      }
+        function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
 
-      const TYPE_PATTERNS = [
-        ['Followers', /follows?|followers?|subs?(cribers?)?/i],
-        ['Likes', /likes?/i],
-        ['Views', /views?|plays?|watch(?: ?time)?/i],
-        ['Comments', /comments?/i],
-        ['Saves', /saves?/i],
-        ['Shares', /shares?|reposts?/i],
-        ['Impressions', /impressions?/i],
-        ['Votes', /votes?|poll/i],
-        ['Members', /members?/i],
-        ['Mentions', /mentions?/i],
-        ['Story', /story|stories/i],
-        ['Live', /live\b/i],
-        ['Traffic', /traffic|visits?/i],
-        ['Other', /.*/]
-      ];
-      function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
+        function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+        function formatK(n){ n = Number(n||0); if(n>=1_000_000) return (n/1_000_000).toFixed(n%1_000_000?1:0)+'M'; if(n>=1_000) return (n/1_000).toFixed(n%1_000?1:0)+'K'; return String(n); }
+        function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]))||'' }
+        function stripEmojis(str){ return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu,''); }
+        function baseLabel(name){ const s = stripEmojis(String(name||'')); const cut = s.split(/[\[|]/)[0]; return cut.replace(/smmgoal/ig,'').replace(/\s+/g,' ').trim(); }
 
-      function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
-      function formatK(n){ n = Number(n||0); if(n>=1_000_000) return (n/1_000_000).toFixed(n%1_000_000?1:0)+'M'; if(n>=1_000) return (n/1_000).toFixed(n%1_000?1:0)+'K'; return String(n); }
-      function escapeHtml(x){ return x?.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]))||'' }
-      function stripEmojis(str){ return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu,''); }
-      function baseLabel(name){ const s = stripEmojis(String(name||'')); const cut = s.split(/[\[|]/)[0]; return cut.replace(/smmgoal/ig,'').replace(/\s+/g,' ').trim(); }
+        function extractMeta(name){
+          const s = String(name||'');
+          const chips = [];
+          const add = (t,kind='gray')=>chips.push({text:t,kind});
+          const r1 = s.match(/(\d{1,3})\s*Days?\s*Refill/i); if(r1) add(`Refill ${r1[1]}d`,'green');
+          const r2 = s.match(/\bR(B)?(\d{1,3})\b/i); if(r2) add(`Refill ${r2[2]}d`,'green');
+          if(/no\s*refill|non\s*refill|no\s*support/i.test(s)) add('No refill','amber');
+          if(/instant|0-?\s*\d+\s*min/i.test(s)) add('Instant','green');
+          const spd = s.match(/speed[:\s]*(\d+[kKmM]?)[^\w]*/i); if(spd) add(`Speed ${spd[1]}/d`,'blue');
+          if(/no\s*drop|non\s*drop/i.test(s)) add('No drop','purple');
+          if(/hq|high\s*quality|premium/i.test(s)) add('HQ','purple');
+          if(/cheap|cheapest/i.test(s)) add('Cheapest','amber');
+          const geos = ['USA','US','UK','Germany','France','Italy','Spain','Brazil','Korea','Japan','India','Turkey','Canada'];
+          for(const g of geos){ const rx = new RegExp(`\\b${g}\\b`,'i'); if(rx.test(s)){ add(g.toUpperCase(),'blue'); break; } }
+          return chips;
+        }
 
-      function extractMeta(name){
-        const s = String(name||'');
-        const chips = [];
-        const add = (t,kind='gray')=>chips.push({text:t,kind});
-        const r1 = s.match(/(\d{1,3})\s*Days?\s*Refill/i); if(r1) add(`Refill ${r1[1]}d`,'green');
-        const r2 = s.match(/\bR(B)?(\d{1,3})\b/i); if(r2) add(`Refill ${r2[2]}d`,'green');
-        if(/no\s*refill|non\s*refill|no\s*support/i.test(s)) add('No refill','amber');
-        if(/instant|0-?\s*\d+\s*min/i.test(s)) add('Instant','green');
-        const spd = s.match(/speed[:\s]*(\d+[kKmM]?)[^\w]*/i); if(spd) add(`Speed ${spd[1]}/d`,'blue');
-        if(/no\s*drop|non\s*drop/i.test(s)) add('No drop','purple');
-        if(/hq|high\s*quality|premium/i.test(s)) add('HQ','purple');
-        if(/cheap|cheapest/i.test(s)) add('Cheapest','amber');
-        const geos = ['USA','US','UK','Germany','France','Italy','Spain','Brazil','Korea','Japan','India','Turkey','Canada'];
-        for(const g of geos){ const rx = new RegExp(`\\b${g}\\b`,'i'); if(rx.test(s)){ add(g.toUpperCase(),'blue'); break; } }
-        return chips;
-      }
+        function summarizeVariant(svc, plat, type){
+          let label = baseLabel(svc.name);
+          // fallback if the base label collapses to something generic
+          if (!label || /^(instagram|tiktok|facebook|youtube|twitter|x|threads|views?|likes?|followers?)$/i.test(label)) {
+            label = type || 'Variant';
+          }
+          const chips = extractMeta(svc.name);
+          chips.unshift({text:`Min ${formatK(svc.min)}`,kind:'gray'});
+          chips.unshift({text:`Max ${formatK(svc.max)}`,kind:'gray'});
+          return {label, chips};
+        }
 
-     function summarizeVariant(svc, plat, type){
-  let label = baseLabel(svc.name);
-  // fallback if the base label collapses to something generic
-  if (!label || /^(instagram|tiktok|facebook|youtube|twitter|x|threads|views?|likes?|followers?)$/i.test(label)) {
-    label = type || 'Variant';
-  }
-  const chips = extractMeta(svc.name);
-  chips.unshift({text:`Min ${formatK(svc.min)}`,kind:'gray'});
-  chips.unshift({text:`Max ${formatK(svc.max)}`,kind:'gray'});
-  return {label, chips};
-}
+        // -------- unified data source (API and/or CSV) ----------
+        async function fetchServices(source) {
+          if (source === 'api') {
+            return await fetchApiServices();
+          }
+          if (source === 'csv') {
+            return await fetchCsvServices();
+          }
+          // merged
+          const [api, csv] = await Promise.allSettled([fetchApiServices(), fetchCsvServices()]);
+          const a = api.status === 'fulfilled' && Array.isArray(api.value) ? api.value : [];
+          const b = csv.status === 'fulfilled' && Array.isArray(csv.value) ? csv.value : [];
+          return mergeServices(a, b);
+        }
 
-      async function load(){
-        try{
+        async function fetchApiServices() {
           const q = encodeURIComponent(elQ.value||'');
           const cat = encodeURIComponent(elCat.value||'');
           const url = `${API}?action=services${q?`&q=${q}`:''}${cat?`&category=${cat}`:''}`;
           const res = await fetch(url);
-          let data; try{ data = await res.json(); }catch(e){ showErr('Could not parse API response as JSON'); return; }
-          if(!Array.isArray(data)){ showErr((data&&data.error)||'Failed to load services'); return; }
+          let data = [];
+          try { data = await res.json(); } catch(e) { return []; }
+          if (!Array.isArray(data)) return [];
+          // normalize field names
+          return data.map(s => ({
+            id: s.id,
+            name: s.name,
+            min: Number(s.min||0),
+            max: Number(s.max||0),
+            price_per_1k: Number(s.price_per_1k||0),
+            category: s.category||''
+          }));
+        }
 
-          const byPlat = new Map();
-          for(const s of data){
-            const plat = detectPlatform(`${s.category||''} ${s.name||''}`);
-            const type = getBaseType(s.name||'');
-            if(!byPlat.has(plat)) byPlat.set(plat, new Map());
-            const m = byPlat.get(plat); if(!m.has(type)) m.set(type, []);
-            m.get(type).push(s);
+        // ---- CSV helpers (namespaced to avoid collisions) ----
+        async function fetchCsvServices() {
+          const candidates = [
+            '/smmgoals.services.csv',              // public root (recommended)
+            '/public/smmgoals.services.csv',       // some setups expose /public prefix
+            './smmgoals.services.csv'              // relative to current page
+          ];
+          let text = '';
+          for (const u of candidates) {
+            try {
+              const res = await fetch(u + '?v=' + Date.now(), { cache: 'no-store' });
+              if (res.ok) { text = await res.text(); break; }
+            } catch (_) { /* continue */ }
           }
-
-          if(!elCat.dataset.filled){
-            const plats = [...byPlat.keys()].sort();
-            for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
-            elCat.dataset.filled='1';
+          if (!text) {
+            console.warn('CSV not found at any path; continuing without CSV. Move smmgoals.services.csv into /public to enable.');
+            return [];
           }
+          const rows = CSV_parse(text);
+          // CSV columns: "name","rate_per_1k_usd","min","max"
+          return rows.map((r, i) => ({
+            id: `csv-${i}`,
+            name: r[0],
+            min: Number(r[2]||0),
+            max: Number(r[3]||0),
+            price_per_1k: Number(r[1]||0),
+            category: '' // platform is detected from the name later
+          }));
+        }
 
-          elWrap.innerHTML='';
-
-          const catsGrid = document.createElement('div');
-          catsGrid.className='grid';
-          for (const [p, m] of byPlat) {
-            const catCard = document.createElement('div');
-catCard.className = 'card';
-catCard.classList.add('cat');
-catCard.style.setProperty('--plat', PLATFORM_COLORS[p] || PLATFORM_COLORS.Other);
-catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
-            catCard.innerHTML = `
-              <h3 style="display:flex;justify-content:space-between;align-items:center">
-                <span>${escapeHtml(p)}</span>
-                <span class="chip s gray">${countServices(m)} services</span>
-              </h3>
-              <div class="muted">Click to explore</div>
-            `;
-            catCard.onclick = () => {
-              const sec = elWrap.querySelector(`section[data-plat="${p}"]`);
-              if (sec) { sec.classList.add('open'); sec.scrollIntoView({behavior:'smooth', block:'start'}); }
-            };
-            catsGrid.appendChild(catCard);
-          }
-          elWrap.appendChild(catsGrid);
-
-          const want = elCat.value;
-          for(const [plat, byType] of byPlat){
-            if(want && plat!==want) continue;
-            const color = PLATFORM_COLORS[plat] || PLATFORM_COLORS.Other;
-
-            const sec = document.createElement('section');
-            sec.className='section';
-            sec.setAttribute('data-plat', plat);
-            sec.style.setProperty('--plat', color);
-            sec.innerHTML = `
-              <div class="head">
-                <div class="row">
-                  <span class="chip blue s">${plat}</span>
-                  <span class="chip gray s">${countServices(byType)} services</span>
-                </div>
-                <div class="muted">Toggle</div>
-              </div>
-              <div class="body"><div class="grid cards"></div></div>
-            `;
-            sec.querySelector('.head').addEventListener('click', ()=>sec.classList.toggle('open'));
-
-            const grid = sec.querySelector('.grid');
-            // (removed: keep only one <details> open within this section)
-            for(const [type, list0] of byType){
-              const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
-              if (!list.length) continue;
-              const cheapest = list[0];
-
-              const card = document.createElement('div');
-              card.className='card';
-              card.innerHTML = `
-                <h3>
-                  <span class="brand">DropSource</span>
-                  <span class="muted">·</span>
-                  <span style="color:#cdd7ff">${escapeHtml(plat)}</span>
-                  <span class="muted">/</span>
-                  <span style="color:#cdd7ff">${escapeHtml(type)}</span>
-                </h3>
-                <div class="row">
-                  <span class="chip s gray">Min ${formatK(cheapest.min)}</span>
-                  <span class="chip s gray">Max ${formatK(cheapest.max)}</span>
-                  ${/drip/i.test(cheapest.name)?'<span class="chip s purple">Dripfeed<\/span>':''}
-                  ${/refill/i.test(cheapest.name)?'<span class="chip s green">Refill<\/span>':''}
-                </div>
-                <div class="row" style="justify-content:space-between;align-items:center">
-                  <div class="price">$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span></div>
-                  <div class="row">
-                    <button class="btn"
-                      data-id="${cheapest.id}"
-                      data-plat="${escapeHtml(plat)}"
-                      data-type="${escapeHtml(type)}"
-                      data-rate="${cheapest.price_per_1k}"
-                      data-min="${cheapest.min}"
-                      data-max="${cheapest.max}"
-                      data-title="${escapeHtml(cheapest.name)}"
-                      data-name="${escapeHtml(type)}"
-                      data-slug="${slugify(`${plat} ${type}`)}"
-                    >Order cheapest</button>
-                    <button class="btn" data-expand>View variants</button>
-                  </div>
-                </div>
-              `;
-
-              // hook up order
-              card.querySelector('button.btn').onclick = (ev)=>{
-                const d = ev.currentTarget.dataset;
-                const qs = new URLSearchParams({
-                  id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
-                  rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
-                });
-                location.href = `/purchase.html?${qs.toString()}`;
-              };
-
-              const det = document.createElement('details');
-              det.style.marginTop='6px';
-              det.innerHTML = `<summary>Variants (${list.length})</summary><div class="variants"></div>`;
-              const vWrap = det.querySelector('div.variants');
-
-              // Show a concise set first: keep cheapest per label, show top 20; user can reveal all
-              const seenLabels = new Set();
-              const dedup = [];
-              for (const s of list) {
-                const lbl = baseLabel(s.name) || type;
-                if (!seenLabels.has(lbl)) { seenLabels.add(lbl); dedup.push(s); }
+        function CSV_parse(text) {
+          const rows = [];
+          let row = [], cell = '', q = false;
+          for (let i = 0; i < text.length; i++) {
+            const ch = text[i], nx = text[i+1];
+            if (q) {
+              if (ch === '"' && nx === '"') { cell += '"'; i++; }
+              else if (ch === '"') { q = false; }
+              else { cell += ch; }
+            } else {
+              if (ch === '"') q = true;
+              else if (ch === ',') { row.push(cell.trim()); cell = ''; }
+              else if (ch === '\n' || ch === '\r') {
+                if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
+                if (ch === '\r' && nx === '\n') i++;
+              } else {
+                cell += ch;
               }
-              const INITIAL_VARIANTS = 20;
-              const initialList = dedup.slice(0, INITIAL_VARIANTS);
+            }
+          }
+          if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); }
+          // drop header if present
+          if (rows[0] && /name/i.test(rows[0][0])) rows.shift();
+          return rows.filter(r => r.length >= 2);
+        }
 
-              function addVariantRow(svc){
-                const {label, chips} = summarizeVariant(svc, plat, type);
-                const row = document.createElement('div');
-                row.className='variant';
-                row.innerHTML = `
-                  <div class="row" style="gap:6px;align-items:center;min-width:0">
-                    <div style="font-size:13px;color:#d7e2f0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                      ${escapeHtml(label)}
-                    </div>
-                    ${chips.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
-                  </div>
+        function mergeServices(a, b) {
+          const key = s => `${(s.name||'').toLowerCase()}|${Number(s.price_per_1k||0).toFixed(4)}|${s.min}|${s.max}`;
+          const seen = new Set();
+          const out = [];
+          for (const s of [...a, ...b]) {
+            const k = key(s);
+            if (seen.has(k)) continue;
+            seen.add(k); out.push(s);
+          }
+          return out;
+        }
+
+        async function load(){
+          try{
+            const raw = await fetchServices(elSource.value || 'merged');
+            if (!Array.isArray(raw) || !raw.length) { showErr('No services found'); return; }
+
+            // group by detected platform and base type
+            const byPlat = new Map();
+            for(const s of raw){
+              const plat = detectPlatform(`${s.category||''} ${s.name||''}`);
+              const type = getBaseType(s.name||'');
+              if(!byPlat.has(plat)) byPlat.set(plat, new Map());
+              const m = byPlat.get(plat); if(!m.has(type)) m.set(type, []);
+              m.get(type).push(s);
+            }
+
+            // fill platform filter if needed
+            if(!elCat.dataset.filled){
+              const plats = [...byPlat.keys()].sort();
+              for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
+              elCat.dataset.filled='1';
+            }
+
+            elWrap.innerHTML='';
+
+            // categories header
+            const catsGrid = document.createElement('div');
+            catsGrid.className='grid';
+            for (const [p, m] of byPlat) {
+              const catCard = document.createElement('div');
+              catCard.className = 'card cat';
+              catCard.style.setProperty('--plat', PLATFORM_COLORS[p] || PLATFORM_COLORS.Other);
+              catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
+              catCard.innerHTML = `
+                <h3 style="display:flex;justify-content:space-between;align-items:center">
+                  <span>${escapeHtml(p)}</span>
+                  <span class="chip s gray">${countServices(m)} services</span>
+                </h3>
+                <div class="muted">Click to explore</div>
+              `;
+              catCard.onclick = () => {
+                const sec = elWrap.querySelector(\`section[data-plat="\${p}"]\`);
+                if (sec) { sec.classList.add('open'); sec.scrollIntoView({behavior:'smooth', block:'start'}); }
+              };
+              catsGrid.appendChild(catCard);
+            }
+            elWrap.appendChild(catsGrid);
+
+            // sections
+            const want = elCat.value;
+            for(const [plat, byType] of byPlat){
+              if(want && plat!==want) continue;
+              const color = PLATFORM_COLORS[plat] || PLATFORM_COLORS.Other;
+
+              const sec = document.createElement('section');
+              sec.className='section';
+              sec.setAttribute('data-plat', plat);
+              sec.style.setProperty('--plat', color);
+              sec.innerHTML = `
+                <div class="head">
                   <div class="row">
-                    <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
-                    <button class="btn"
-                      data-id="${svc.id}"
-                      data-plat="${escapeHtml(plat)}"
-                      data-type="${escapeHtml(type)}"
-                      data-rate="${svc.price_per_1k}"
-                      data-min="${svc.min}"
-                      data-max="${svc.max}"
-                      data-title="${escapeHtml(svc.name)}"
-                      data-name="${escapeHtml(type)}"
-                      data-slug="${slugify(`${plat} ${type}`)}"
-                    >Order</button>
-                  </div>`;
-                row.querySelector('button.btn').onclick = (ev)=>{
+                    <span class="chip blue s">${plat}</span>
+                    <span class="chip gray s">${countServices(byType)} services</span>
+                  </div>
+                  <div class="muted">Toggle</div>
+                </div>
+                <div class="body"><div class="grid cards"></div></div>
+              `;
+              sec.querySelector('.head').addEventListener('click',()=>sec.classList.toggle('open'));
+
+              const grid = sec.querySelector('.grid');
+              for(const [type, list0] of byType){
+                const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
+                if (!list.length) continue;
+                const cheapest = list[0];
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                // Build card header
+                const h3 = document.createElement('h3');
+
+                const brandSpan = document.createElement('span');
+                brandSpan.className = 'brand';
+                brandSpan.textContent = 'DropSource';
+
+                const dot = document.createElement('span');
+                dot.className = 'muted';
+                dot.textContent = ' · ';
+
+                const platSpan = document.createElement('span');
+                platSpan.style.color = '#cdd7ff';
+                platSpan.textContent = plat;
+
+                const slash = document.createElement('span');
+                slash.className = 'muted';
+                slash.textContent = ' / ';
+
+                const typeSpan = document.createElement('span');
+                typeSpan.style.color = '#cdd7ff';
+                typeSpan.textContent = type;
+
+                h3.append(brandSpan, dot, platSpan, slash, typeSpan);
+
+                // Chip row
+                const chipsRow = document.createElement('div');
+                chipsRow.className = 'row';
+
+                const chipMin = document.createElement('span');
+                chipMin.className = 'chip s gray';
+                chipMin.textContent = `Min ${formatK(cheapest.min)}`;
+
+                const chipMax = document.createElement('span');
+                chipMax.className = 'chip s gray';
+                chipMax.textContent = `Max ${formatK(cheapest.max)}`;
+
+                chipsRow.append(chipMin, chipMax);
+
+                if (/drip/i.test(cheapest.name)) {
+                  const drip = document.createElement('span');
+                  drip.className = 'chip s purple';
+                  drip.textContent = 'Dripfeed';
+                  chipsRow.appendChild(drip);
+                }
+                if (/refill/i.test(cheapest.name)) {
+                  const refill = document.createElement('span');
+                  refill.className = 'chip s green';
+                  refill.textContent = 'Refill';
+                  chipsRow.appendChild(refill);
+                }
+
+                // Price + buttons row
+                const priceRow = document.createElement('div');
+                priceRow.className = 'row';
+                priceRow.style.justifyContent = 'space-between';
+                priceRow.style.alignItems = 'center';
+
+                const priceDiv = document.createElement('div');
+                priceDiv.className = 'price';
+                priceDiv.innerHTML = `$${cheapest.price_per_1k.toFixed(2)} <span class="muted">/ 1k</span>`;
+
+                const btnRow = document.createElement('div');
+                btnRow.className = 'row';
+
+                const orderBtn = document.createElement('button');
+                orderBtn.className = 'btn';
+                orderBtn.dataset.id = `${cheapest.id}`;
+                orderBtn.dataset.plat = `${plat}`;
+                orderBtn.dataset.type = `${type}`;
+                orderBtn.dataset.rate = `${cheapest.price_per_1k}`;
+                orderBtn.dataset.min = `${cheapest.min}`;
+                orderBtn.dataset.max = `${cheapest.max}`;
+                orderBtn.dataset.title = `${cheapest.name}`;
+                orderBtn.dataset.name = `${type}`;
+                orderBtn.dataset.slug = `${slugify(plat + ' ' + type)}`;
+                orderBtn.textContent = 'Order cheapest';
+
+                const expandBtn = document.createElement('button');
+                expandBtn.className = 'btn';
+                expandBtn.setAttribute('data-expand','');
+                expandBtn.textContent = 'View variants';
+
+                btnRow.append(orderBtn, expandBtn);
+                priceRow.append(priceDiv, btnRow);
+
+                // Compose card
+                card.replaceChildren(h3, chipsRow, priceRow);
+
+                card.querySelector('button.btn').onclick = (ev)=>{
                   const d = ev.currentTarget.dataset;
                   const qs = new URLSearchParams({
                     id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
@@ -415,222 +530,118 @@ catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Oth
                   });
                   location.href = `/purchase.html?${qs.toString()}`;
                 };
-                vWrap.appendChild(row);
+
+                const det = document.createElement('details');
+                det.style.marginTop = '6px';
+                const sum = document.createElement('summary');
+                sum.textContent = `Variants (${list.length})`;
+                const vWrap = document.createElement('div');
+                vWrap.className = 'variants';
+                det.replaceChildren(sum, vWrap);
+
+                const seenLabels = new Set();
+                const dedup = [];
+                for (const s of list) {
+                  const lbl = baseLabel(s.name) || type;
+                  if (!seenLabels.has(lbl)) { seenLabels.add(lbl); dedup.push(s); }
+                }
+                const INITIAL_VARIANTS = 12;
+                const initialList = dedup.slice(0, INITIAL_VARIANTS);
+
+                function addVariantRow(svc){
+                  const {label, chips} = summarizeVariant(svc, plat, type);
+                  const row = document.createElement('div');
+                  row.className = 'variant';
+                  // left side: label + chips
+                  const left = document.createElement('div');
+                  left.className = 'row';
+                  left.style.gap = '6px';
+                  left.style.alignItems = 'center';
+                  left.style.minWidth = '0';
+
+                  const labelDiv = document.createElement('div');
+                  labelDiv.style.fontSize = '13px';
+                  labelDiv.style.color = '#d7e2f0';
+                  labelDiv.style.minWidth = '0';
+                  labelDiv.style.overflow = 'hidden';
+                  labelDiv.style.textOverflow = 'ellipsis';
+                  labelDiv.style.whiteSpace = 'nowrap';
+                  labelDiv.textContent = label;
+
+                  left.appendChild(labelDiv);
+                  chips.forEach(t=>{
+                    const s = document.createElement('span');
+                    s.className = `chip s ${t.kind}`;
+                    s.textContent = t.text;
+                    left.appendChild(s);
+                  });
+
+                  // right side: price + order button
+                  const right = document.createElement('div');
+                  right.className = 'row';
+
+                  const vPrice = document.createElement('div');
+                  vPrice.className = 'price';
+                  vPrice.style.fontSize = '13px';
+                  vPrice.innerHTML = `$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span>`;
+
+                  const vBtn = document.createElement('button');
+                  vBtn.className = 'btn';
+                  vBtn.dataset.id = `${svc.id}`;
+                  vBtn.dataset.plat = `${plat}`;
+                  vBtn.dataset.type = `${type}`;
+                  vBtn.dataset.rate = `${svc.price_per_1k}`;
+                  vBtn.dataset.min = `${svc.min}`;
+                  vBtn.dataset.max = `${svc.max}`;
+                  vBtn.dataset.title = `${svc.name}`;
+                  vBtn.dataset.name = `${type}`;
+                  vBtn.dataset.slug = `${slugify(plat + ' ' + type)}`;
+                  vBtn.textContent = 'Order';
+
+                  right.append(vPrice, vBtn);
+
+                  row.replaceChildren(left, right);
+                  row.querySelector('button.btn').onclick = (ev)=>{
+                    const d = ev.currentTarget.dataset;
+                    const qs = new URLSearchParams({
+                      id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
+                      rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
+                    });
+                    location.href = `/purchase.html?${qs.toString()}`;
+                  };
+                  vWrap.appendChild(row);
+                }
+
+                initialList.forEach(addVariantRow);
+
+                if (list.length > initialList.length) {
+                  const reveal = document.createElement('button');
+                  reveal.className = 'btn';
+                  reveal.style.margin = '8px 0 4px';
+                  reveal.textContent = `Show all ${list.length} variants`;
+                  reveal.onclick = () => {
+                    const initialIds = new Set(initialList.map(s=>s.id));
+                    for (const svc of list) { if (!initialIds.has(svc.id)) addVariantRow(svc); }
+                    reveal.remove();
+                  };
+                  vWrap.appendChild(reveal);
+                }
+
+                card.appendChild(det);
+                card.querySelector('[data-expand]').onclick=()=>{ det.open = !det.open; if(det.open){ det.scrollIntoView({behavior:'smooth', block:'nearest'}); } };
+                grid.appendChild(card);
               }
-
-              // Render initial concise set
-              initialList.forEach(addVariantRow);
-
-              // Add a reveal-all button if there are more variants than initially shown
-              if (list.length > initialList.length) {
-                const reveal = document.createElement('button');
-                reveal.className = 'btn';
-                reveal.style.margin = '8px 0 4px';
-                reveal.textContent = `Show all ${list.length} variants`;
-                reveal.onclick = () => {
-                  const initialIds = new Set(initialList.map(s=>s.id));
-                  for (const svc of list) { if (!initialIds.has(svc.id)) addVariantRow(svc); }
-                  reveal.remove();
-                };
-                vWrap.appendChild(reveal);
-              }
-
-              card.appendChild(det);
-              card.querySelector('[data-expand]').onclick=()=>{ det.open = !det.open; if(det.open){ det.scrollIntoView({behavior:'smooth', block:'nearest'}); } };
-              grid.appendChild(card);
+              elWrap.appendChild(sec);
             }
-            elWrap.appendChild(sec);
-          }
-        }catch(e){ showFatal(e); }
-      }
+          }catch(e){ showFatal(e); }
+        }
 
-      function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
+        function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
 
-/* ---------------- CSV -> structured data ---------------- */
-async function initSmmGoals() {
-  const { platforms, counters } = await loadSmmGoalsCsv('/smmgoals.services.csv');
-
-  // Example: wire into your existing renderer.
-  // Replace this with whatever function you use to draw the cards.
-  // renderTopCategories(counters);              // <- platform chips with counts
-  // renderServiceCards(platforms['Instagram']); // <- example: one platform
-  // Or pass `platforms` to your filter/tabs logic.
-  console.log(platforms, counters);
-}
-
-/* Robust CSV parser (quotes + commas) */
-function parseCSV(text) {
-  const rows = [];
-  let row = [], cell = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i], nx = text[i+1];
-    if (q) {
-      if (ch === '"' && nx === '"') { cell += '"'; i++; }
-      else if (ch === '"') { q = false; }
-      else { cell += ch; }
-    } else {
-      if (ch === '"') q = true;
-      else if (ch === ',') { row.push(cell.trim()); cell = ''; }
-      else if (ch === '\n' || ch === '\r') {
-        if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
-        // collapse \r\n
-        if (ch === '\r' && nx === '\n') i++;
-      } else {
-        cell += ch;
-      }
-    }
-  }
-  if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); }
-  return rows.filter(r => r.length >= 2);
-}
-
-/* Platform + category detection */
-const PLATFORM_ALIASES = [
-  'Instagram','Twitter','TikTok','Threads','YouTube','Facebook','Snapchat','Telegram','Reddit','Quora',
-  'Spotify','Soundcloud','Twitch','Discord','Pinterest','Linkedin','VK','Tumblr','Mixcloud','Vimeo',
-  'Reverbnation','Datpiff','IMDB','Shazam','Tidal','Rumble','Coub','Ok.ru','Dailymotion','Podcast',
-  'Whatsapp','Kick','Website','Traffic','Google' // Traffic / Google map to Website section in UI
-];
-
-const CATEGORY_RULES = {
-  Followers: ['Followers','Members','Subscribers','Fans'],
-  Likes: ['Likes','Hearts','Upvotes','Re-Up','Reposts Likes'],
-  Views: ['Views','Video Views','Story Views','Clip Views','Live Views'],
-  Comments: ['Comments','Replies','Reviews','Ratings'],
-  Shares: ['Shares','Reposts','Reblogs','Retweets','Quote Retweet'],
-  Votes: ['Votes','Poll'],
-  Mentions: ['Mentions','Mention'],
-  Impressions: ['Impressions'],
-  Saves: ['Saves','Bookmarks'],
-  Plays: ['Plays','Streams'],
-  Listeners: ['Monthly Listeners'],
-  Traffic: ['Traffic','Visits','Visitors','Clicks'],
-  Other: []
-};
-
-function cleanName(s) {
-  return s
-    .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/ug, '') // strip flags/emojis
-    .replace(/\s{2,}/g,' ')
-    .trim();
-}
-
-function detectPlatform(name) {
-  const n = cleanName(name).toLowerCase();
-  for (const p of PLATFORM_ALIASES) {
-    const needle = p.toLowerCase();
-    if (n.includes(needle)) {
-      if (p === 'Traffic' || p === 'Google') return 'Website';
-      if (p === 'Ok.ru') return 'OK.ru';
-      if (p === 'VK') return 'VK';
-      return p;
-    }
-  }
-  // heuristics for lines like "Website Traffic From - (Facebook)":
-  if (/traffic|visits|visitors|click/i.test(n)) return 'Website';
-  return 'Other';
-}
-
-function detectCategory(name) {
-  const n = cleanName(name).toLowerCase();
-  for (const [cat, keys] of Object.entries(CATEGORY_RULES)) {
-    for (const k of keys) {
-      if (n.includes(k.toLowerCase())) return cat;
-    }
-  }
-  return 'Other';
-}
-
-function extractTags(title) {
-  // Everything in [...] becomes a chip/tag
-  const tags = [];
-  const re = /\[([^\]]+)\]/g;
-  let m; while ((m = re.exec(title))) tags.push(m[1].trim());
-  return tags.slice(0, 6); // keep it tight in the UI
-}
-
-/* Main loader */
-async function loadSmmGoalsCsv(path) {
-  const text = await fetch(path, { cache: 'no-store' }).then(r => r.text());
-  const rows = parseCSV(text);
-
-  // CSV columns: Title, Price, Min, Max (no header)
-  const items = rows.map(r => {
-    const [title, priceStr, minStr, maxStr] = r;
-    if (!title || !priceStr) return null;
-    const platform = detectPlatform(title);
-    const category = detectCategory(title);
-    const price = Number(priceStr);
-    const min = Number(minStr || 0);
-    const max = Number(maxStr || 0);
-    return {
-      title: title.trim(),
-      platform,
-      category,
-      price,
-      min,
-      max,
-      tags: extractTags(title)
-    };
-  }).filter(Boolean);
-
-  // Group: platform -> category -> variants[]
-  const platforms = {};
-  for (const it of items) {
-    if (!platforms[it.platform]) platforms[it.platform] = {};
-    if (!platforms[it.platform][it.category]) platforms[it.platform][it.category] = [];
-    platforms[it.platform][it.category].push(it);
-  }
-
-  // Sort by price asc and create preview lists (first 6) to avoid super long cards by default
-  for (const p of Object.keys(platforms)) {
-    for (const c of Object.keys(platforms[p])) {
-      const arr = platforms[p][c].sort((a,b) => a.price - b.price);
-      // Optionally trim out very low-info duplicates (same price & near-same name)
-      platforms[p][c] = dedupeNear(arr);
-      platforms[p][c].preview = platforms[p][c].slice(0, 6); // for “View variants” expanded = show all
-    }
-  }
-
-  // Top category counters (for your chips at the top)
-  const counters = Object.fromEntries(
-    Object.entries(platforms).map(([p, cats]) => [
-      p,
-      Object.values(cats).reduce((sum,a) => sum + a.length, 0)
-    ])
-  );
-
-  return { platforms, counters };
-}
-
-function dedupeNear(arr) {
-  const out = [];
-  for (const v of arr) {
-    const last = out[out.length-1];
-    if (last && Math.abs(last.price - v.price) < 0.005 &&
-        last.category === v.category &&
-        last.platform === v.platform &&
-        similarityKey(last.title) === similarityKey(v.title)) {
-      continue; // drop near-duplicate
-    }
-    out.push(v);
-  }
-  return out;
-}
-function similarityKey(s) {
-  return cleanName(s)
-    .replace(/\b(max|min|instant|refill|day|hour|hrs?|lifetime|fast|superfast|hq|usa|uk|ww|global)\b/gi,'')
-    .replace(/\s{2,}/g,' ')
-    .toLowerCase();
-}
-
-/* Kick it off */
-document.addEventListener('DOMContentLoaded', initSmmGoals);
-
-      // initial load
-      load();
-    }catch(e){ showFatal(e); }
-  })();
+        // initial load
+        load();
+      }catch(e){ showFatal(e); }
+    })();
   </script>
 </body>
 </html>
