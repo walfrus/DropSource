@@ -446,6 +446,187 @@ catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Oth
 
       function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
 
+/* ---------------- CSV -> structured data ---------------- */
+async function initSmmGoals() {
+  const { platforms, counters } = await loadSmmGoalsCsv('/smmgoals.services.csv');
+
+  // Example: wire into your existing renderer.
+  // Replace this with whatever function you use to draw the cards.
+  // renderTopCategories(counters);              // <- platform chips with counts
+  // renderServiceCards(platforms['Instagram']); // <- example: one platform
+  // Or pass `platforms` to your filter/tabs logic.
+  console.log(platforms, counters);
+}
+
+/* Robust CSV parser (quotes + commas) */
+function parseCSV(text) {
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], nx = text[i+1];
+    if (q) {
+      if (ch === '"' && nx === '"') { cell += '"'; i++; }
+      else if (ch === '"') { q = false; }
+      else { cell += ch; }
+    } else {
+      if (ch === '"') q = true;
+      else if (ch === ',') { row.push(cell.trim()); cell = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
+        // collapse \r\n
+        if (ch === '\r' && nx === '\n') i++;
+      } else {
+        cell += ch;
+      }
+    }
+  }
+  if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); }
+  return rows.filter(r => r.length >= 2);
+}
+
+/* Platform + category detection */
+const PLATFORM_ALIASES = [
+  'Instagram','Twitter','TikTok','Threads','YouTube','Facebook','Snapchat','Telegram','Reddit','Quora',
+  'Spotify','Soundcloud','Twitch','Discord','Pinterest','Linkedin','VK','Tumblr','Mixcloud','Vimeo',
+  'Reverbnation','Datpiff','IMDB','Shazam','Tidal','Rumble','Coub','Ok.ru','Dailymotion','Podcast',
+  'Whatsapp','Kick','Website','Traffic','Google' // Traffic / Google map to Website section in UI
+];
+
+const CATEGORY_RULES = {
+  Followers: ['Followers','Members','Subscribers','Fans'],
+  Likes: ['Likes','Hearts','Upvotes','Re-Up','Reposts Likes'],
+  Views: ['Views','Video Views','Story Views','Clip Views','Live Views'],
+  Comments: ['Comments','Replies','Reviews','Ratings'],
+  Shares: ['Shares','Reposts','Reblogs','Retweets','Quote Retweet'],
+  Votes: ['Votes','Poll'],
+  Mentions: ['Mentions','Mention'],
+  Impressions: ['Impressions'],
+  Saves: ['Saves','Bookmarks'],
+  Plays: ['Plays','Streams'],
+  Listeners: ['Monthly Listeners'],
+  Traffic: ['Traffic','Visits','Visitors','Clicks'],
+  Other: []
+};
+
+function cleanName(s) {
+  return s
+    .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/ug, '') // strip flags/emojis
+    .replace(/\s{2,}/g,' ')
+    .trim();
+}
+
+function detectPlatform(name) {
+  const n = cleanName(name).toLowerCase();
+  for (const p of PLATFORM_ALIASES) {
+    const needle = p.toLowerCase();
+    if (n.includes(needle)) {
+      if (p === 'Traffic' || p === 'Google') return 'Website';
+      if (p === 'Ok.ru') return 'OK.ru';
+      if (p === 'VK') return 'VK';
+      return p;
+    }
+  }
+  // heuristics for lines like "Website Traffic From - (Facebook)":
+  if (/traffic|visits|visitors|click/i.test(n)) return 'Website';
+  return 'Other';
+}
+
+function detectCategory(name) {
+  const n = cleanName(name).toLowerCase();
+  for (const [cat, keys] of Object.entries(CATEGORY_RULES)) {
+    for (const k of keys) {
+      if (n.includes(k.toLowerCase())) return cat;
+    }
+  }
+  return 'Other';
+}
+
+function extractTags(title) {
+  // Everything in [...] becomes a chip/tag
+  const tags = [];
+  const re = /\[([^\]]+)\]/g;
+  let m; while ((m = re.exec(title))) tags.push(m[1].trim());
+  return tags.slice(0, 6); // keep it tight in the UI
+}
+
+/* Main loader */
+async function loadSmmGoalsCsv(path) {
+  const text = await fetch(path, { cache: 'no-store' }).then(r => r.text());
+  const rows = parseCSV(text);
+
+  // CSV columns: Title, Price, Min, Max (no header)
+  const items = rows.map(r => {
+    const [title, priceStr, minStr, maxStr] = r;
+    if (!title || !priceStr) return null;
+    const platform = detectPlatform(title);
+    const category = detectCategory(title);
+    const price = Number(priceStr);
+    const min = Number(minStr || 0);
+    const max = Number(maxStr || 0);
+    return {
+      title: title.trim(),
+      platform,
+      category,
+      price,
+      min,
+      max,
+      tags: extractTags(title)
+    };
+  }).filter(Boolean);
+
+  // Group: platform -> category -> variants[]
+  const platforms = {};
+  for (const it of items) {
+    if (!platforms[it.platform]) platforms[it.platform] = {};
+    if (!platforms[it.platform][it.category]) platforms[it.platform][it.category] = [];
+    platforms[it.platform][it.category].push(it);
+  }
+
+  // Sort by price asc and create preview lists (first 6) to avoid super long cards by default
+  for (const p of Object.keys(platforms)) {
+    for (const c of Object.keys(platforms[p])) {
+      const arr = platforms[p][c].sort((a,b) => a.price - b.price);
+      // Optionally trim out very low-info duplicates (same price & near-same name)
+      platforms[p][c] = dedupeNear(arr);
+      platforms[p][c].preview = platforms[p][c].slice(0, 6); // for “View variants” expanded = show all
+    }
+  }
+
+  // Top category counters (for your chips at the top)
+  const counters = Object.fromEntries(
+    Object.entries(platforms).map(([p, cats]) => [
+      p,
+      Object.values(cats).reduce((sum,a) => sum + a.length, 0)
+    ])
+  );
+
+  return { platforms, counters };
+}
+
+function dedupeNear(arr) {
+  const out = [];
+  for (const v of arr) {
+    const last = out[out.length-1];
+    if (last && Math.abs(last.price - v.price) < 0.005 &&
+        last.category === v.category &&
+        last.platform === v.platform &&
+        similarityKey(last.title) === similarityKey(v.title)) {
+      continue; // drop near-duplicate
+    }
+    out.push(v);
+  }
+  return out;
+}
+function similarityKey(s) {
+  return cleanName(s)
+    .replace(/\b(max|min|instant|refill|day|hour|hrs?|lifetime|fast|superfast|hq|usa|uk|ww|global)\b/gi,'')
+    .replace(/\s{2,}/g,' ')
+    .toLowerCase();
+}
+
+/* Kick it off */
+document.addEventListener('DOMContentLoaded', initSmmGoals);
+
       // initial load
       load();
     }catch(e){ showFatal(e); }
