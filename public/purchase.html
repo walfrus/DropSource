@@ -18,7 +18,18 @@
   input[disabled]{background:#f6f6f6}
   .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
   .small{font-size:12px}
+  .hidden{display:none}
+  .buttons button#logout{background:#111;color:#fff}
+  .buttons button#login{background:#fff;border:1px solid #ccc}
   </style>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script>
+  // TODO: replace with your real values (anon key is safe to expose)
+  const SUPABASE_URL  = 'https://oyibixfoiwizpphuimkl.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
+  const HAS_SUPABASE  = typeof window !== 'undefined' && !!window.supabase && SUPABASE_URL.startsWith('http');
+  const supa = HAS_SUPABASE ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+</script>
 </head>
 <body>
   <h1>Purchase</h1>
@@ -35,6 +46,10 @@
       </div>
     </div>
     <button id="chk">Check Wallet</button>
+    <div class="buttons">
+      <button id="login">Sign in with Google</button>
+      <button id="logout">Sign out</button>
+    </div>
     <p class="help small">Tip: we’ll remember your user id + email on this device only. (Full login coming soon.)</p>
     <p class="muted">Balance: <b id="bal">$0.00</b></p>
   </div>
@@ -114,10 +129,88 @@ function slugify(s){
     .replace(/\s/g, '-');                  // to kebab
 }
 
+// --- minimal fetch helper that always adds user headers ---
+function currentUser(){
+  const u = loadUser();
+  const uid = (u.uid || '').trim() || ($('uid')?.value || '').trim();
+  const email = (u.email || '').trim() || ($('email')?.value || '').trim();
+  return { uid, email };
+}
+async function api(url, opts={}){
+  const { uid, email } = currentUser();
+  const headers = Object.assign(
+    { 'content-type':'application/json' },
+    { 'x-user-id': uid || '', 'x-user-email': email || '' },
+    opts.headers || {}
+  );
+  const res = await fetch(url, Object.assign({ method: 'GET', headers }, opts));
+  const text = await res.text();
+  let json = null; try{ json = JSON.parse(text); }catch{}
+  return { ok: res.ok, status: res.status, json, text };
+}
+async function refreshBalance(){
+  const { uid, email } = currentUser();
+  if (!uid || !email){
+    $('bal').textContent = '$0.00';
+    return;
+  }
+  const r = await api(`${BASE}/api/wallet/get`);
+  if (r.ok && r.json){
+    $('bal').textContent = cents(r.json.balance_cents || 0);
+  } else {
+    $('bal').textContent = '—';
+  }
+}
+
+function setAuthUI(loggedIn){
+  const has = !!loggedIn;
+  if ($('login')) $('login').classList.toggle('hidden', has);
+  if ($('logout')) $('logout').classList.toggle('hidden', !has);
+  if ($('uid')) $('uid').disabled = has;
+  if ($('email')) $('email').disabled = has;
+}
+async function bootstrapAuth(){
+  if (!supa) { setAuthUI(false); return; }
+  const { data: { user } } = await supa.auth.getUser();
+  if (user){
+    saveUser(user.id, user.email || user.user_metadata?.email || '');
+    applyUser();
+    setAuthUI(true);
+    await refreshBalance();
+  } else {
+    setAuthUI(false);
+  }
+  supa.auth.onAuthStateChange(async (_ev, session) => {
+    const u = session?.user || null;
+    if (u){
+      saveUser(u.id, u.email || u.user_metadata?.email || '');
+      applyUser();
+      setAuthUI(true);
+      await refreshBalance();
+    } else {
+      localStorage.removeItem(KEY);
+      applyUser();
+      setAuthUI(false);
+      await refreshBalance();
+    }
+  });
+  if ($('login')) $('login').onclick = async ()=>{
+    if (!supa){ alert('Auth not configured'); return; }
+    await supa.auth.signInWithOAuth({
+      provider:'google',
+      options:{ redirectTo: location.href }
+    });
+  };
+  if ($('logout')) $('logout').onclick = async ()=>{
+    if (!supa) return;
+    await supa.auth.signOut();
+  };
+}
+
 // CSV columns (exact): name,rate_per_1k_usd,min,max,(optional) category
 let catalog = [];
 // lookup by lower-name and by slug
-let byName = new Map();
+let byName = [];
 
 async function loadCSV() {
   const r = await fetch('/smmgoals.services.csv', { cache:'no-store' });
@@ -263,7 +356,12 @@ function findServiceFromQuery(q){
 }
 
 // hook up UI
-$('chk').onclick = refreshBalance;
+$('chk').onclick = async ()=>{
+  const uid = ($('uid').value || '').trim();
+  const email = ($('email').value || '').trim();
+  if (uid && email) saveUser(uid, email);
+  await refreshBalance();
+};
 $('svc').addEventListener('change', updateFromSelection);
 $('qty').addEventListener('input', estimate);
 $('find').addEventListener('input', applyFilters);
@@ -272,6 +370,10 @@ $('fcat').addEventListener('change', applyFilters);
 $('create').onclick = async () => {
   $('msg').className = 'muted';
   $('msg').textContent = 'Resolving service...';
+  {
+    const { uid, email } = currentUser();
+    if (!uid || !email){ $('msg').textContent = '❌ Sign in (or enter User ID + Email) first'; $('msg').className = 'err'; return; }
+  }
   const name = $('svc').value;
   const target = $('url').value.trim();
   const qty = Number($('qty').value || 0);
@@ -300,6 +402,10 @@ $('create').onclick = async () => {
 };
 
 async function addFunds(method, cents){
+  {
+    const { uid, email } = currentUser();
+    if (!uid || !email){ $('msg').textContent = '❌ Sign in (or enter User ID + Email) first'; $('msg').className = 'err'; return; }
+  }
   const path = method==='coinbase' ? '/api/deposits/create-coinbase' : '/api/deposits/create-square';
   const r = await api(`${BASE}${path}`, { method:'POST', body: JSON.stringify({ amount_cents: cents }) });
   const url = r.json?.url;
@@ -324,6 +430,8 @@ $('addCustom').onclick = () => {
 // init
 (async function init(){
   applyUser();
+  await bootstrapAuth();
+  await refreshBalance();
   await loadCSV();
   const qp = params();
   // Preselect by name/slug/index if present
