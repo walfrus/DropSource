@@ -288,6 +288,34 @@ details[open] summary{opacity:.9}
         }
 
         // ---- CSV helpers (namespaced to avoid collisions) ----
+        // Preprocess CSV that includes category markers like "*//Instagram"
+        // Converts markers into an extra "__cat__" column appended to each data row.
+        function normalizeCsvWithMarkers(csvText) {
+          const lines = csvText.split(/\r?\n/);
+          let currentCat = "";
+          const out = [];
+          for (let raw of lines) {
+            if (raw == null) continue;
+            const line = raw.trim();
+            if (!line) continue; // skip blank spacer lines
+            if (line.startsWith("*//")) {
+              currentCat = line.replace(/^\*\/\/\s*/, "").trim();
+              continue;
+            }
+            // header: extend with category column
+            if (line.startsWith(`"name","rate_per_1k_usd","min","max"`)) {
+              out.push(`${line},"__cat__"`);
+              continue;
+            }
+            // data row (quoted)
+            if (line.startsWith(`"`)) {
+              out.push(`${line},"${currentCat}"`);
+              continue;
+            }
+            // ignore any other non-data lines
+          }
+          return out.join("\n");
+        }
         async function fetchCsvServices() {
           const candidates = [
             '/smmgoals.services.csv',              // public root (recommended)
@@ -305,6 +333,8 @@ details[open] summary{opacity:.9}
             console.warn('CSV not found at any path; continuing without CSV. Move smmgoals.services.csv into /public to enable.');
             return [];
           }
+          // Convert *//Category markers into a real column before parsing
+          text = normalizeCsvWithMarkers(text);
           const rows = CSV_parse(text);
           // CSV columns: "name","rate_per_1k_usd","min","max"
           return rows.map((r, i) => ({
@@ -313,7 +343,7 @@ details[open] summary{opacity:.9}
             min: Number(r[2]||0),
             max: Number(r[3]||0),
             price_per_1k: Number(r[1]||0),
-            category: '' // platform is detected from the name later
+            category: r[4] || '' // category from *// markers (fallback to detection later)
           }));
         }
 
