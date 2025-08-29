@@ -51,7 +51,8 @@
 .variant .row:first-child > div{
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%
 }
-.variant .price{white-space:nowrap}
+    .variant .price{white-space:nowrap}
+    .variants{max-height:60vh;overflow:auto;padding-right:4px}
 
 details summary{list-style:none}
 details[open] summary{opacity:.9}
@@ -109,6 +110,13 @@ details[open] summary{opacity:.9}
       document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
       document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
       elQ.oninput = load; elCat.onchange = load;
+      // keep only one <details> open on the whole page
+      document.addEventListener('toggle', (ev) => {
+        const det = ev.target;
+        if (det && det.tagName === 'DETAILS' && det.open) {
+          document.querySelectorAll('details[open]').forEach(d => { if (d !== det) d.open = false; });
+        }
+      }, true);
 
       function showErr(m){ console.error(m); const box=document.createElement('div'); box.className='loading'; box.textContent=m; elWrap.replaceChildren(box);} 
 
@@ -295,13 +303,7 @@ catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Oth
             sec.querySelector('.head').addEventListener('click', ()=>sec.classList.toggle('open'));
 
             const grid = sec.querySelector('.grid');
-            // keep only one <details> open within this section
-sec.addEventListener('toggle', (ev) => {
-  const det = ev.target;
-  if (det.tagName === 'DETAILS' && det.open) {
-    sec.querySelectorAll('details[open]').forEach(d => { if (d !== det) d.open = false; });
-  }
-}, true);
+            // (removed: keep only one <details> open within this section)
             for(const [type, list0] of byType){
               const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
               if (!list.length) continue;
@@ -354,35 +356,44 @@ sec.addEventListener('toggle', (ev) => {
 
               const det = document.createElement('details');
               det.style.marginTop='6px';
-              det.innerHTML = `<summary>Variants (${list.length})</summary><div></div>`;
-              const vWrap = det.querySelector('div');
+              det.innerHTML = `<summary>Variants (${list.length})</summary><div class="variants"></div>`;
+              const vWrap = det.querySelector('div.variants');
 
-              for(const svc of list){
+              // Show a concise set first: keep cheapest per label, show top 20; user can reveal all
+              const seenLabels = new Set();
+              const dedup = [];
+              for (const s of list) {
+                const lbl = baseLabel(s.name) || type;
+                if (!seenLabels.has(lbl)) { seenLabels.add(lbl); dedup.push(s); }
+              }
+              const INITIAL_VARIANTS = 20;
+              const initialList = dedup.slice(0, INITIAL_VARIANTS);
+
+              function addVariantRow(svc){
                 const {label, chips} = summarizeVariant(svc, plat, type);
                 const row = document.createElement('div');
                 row.className='variant';
                 row.innerHTML = `
-  <div class="row" style="gap:6px;align-items:center;min-width:0">
-    <div style="font-size:13px;color:#d7e2f0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-      ${escapeHtml(label)}
-    </div>
-    ${chips.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
-  </div>
-  <div class="row">
-    <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
-    <button class="btn"
-      data-id="${svc.id}"
-      data-plat="${escapeHtml(plat)}"
-      data-type="${escapeHtml(type)}"
-      data-rate="${svc.price_per_1k}"
-      data-min="${svc.min}"
-      data-max="${svc.max}"
-      data-title="${escapeHtml(svc.name)}"
-      data-name="${escapeHtml(type)}"
-      data-slug="${slugify(`${plat} ${type}`)}"
-    >Order</button>
-  </div>`;
-
+                  <div class="row" style="gap:6px;align-items:center;min-width:0">
+                    <div style="font-size:13px;color:#d7e2f0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      ${escapeHtml(label)}
+                    </div>
+                    ${chips.map(t=>`<span class="chip s ${t.kind}">${escapeHtml(t.text)}</span>`).join('')}
+                  </div>
+                  <div class="row">
+                    <div class="price" style="font-size:13px">$${svc.price_per_1k.toFixed(2)} <span class="muted">/1k</span></div>
+                    <button class="btn"
+                      data-id="${svc.id}"
+                      data-plat="${escapeHtml(plat)}"
+                      data-type="${escapeHtml(type)}"
+                      data-rate="${svc.price_per_1k}"
+                      data-min="${svc.min}"
+                      data-max="${svc.max}"
+                      data-title="${escapeHtml(svc.name)}"
+                      data-name="${escapeHtml(type)}"
+                      data-slug="${slugify(`${plat} ${type}`)}"
+                    >Order</button>
+                  </div>`;
                 row.querySelector('button.btn').onclick = (ev)=>{
                   const d = ev.currentTarget.dataset;
                   const qs = new URLSearchParams({
@@ -391,11 +402,28 @@ sec.addEventListener('toggle', (ev) => {
                   });
                   location.href = `/purchase.html?${qs.toString()}`;
                 };
-
                 vWrap.appendChild(row);
               }
+
+              // Render initial concise set
+              initialList.forEach(addVariantRow);
+
+              // Add a reveal-all button if there are more variants than initially shown
+              if (list.length > initialList.length) {
+                const reveal = document.createElement('button');
+                reveal.className = 'btn';
+                reveal.style.margin = '8px 0 4px';
+                reveal.textContent = `Show all ${list.length} variants`;
+                reveal.onclick = () => {
+                  const initialIds = new Set(initialList.map(s=>s.id));
+                  for (const svc of list) { if (!initialIds.has(svc.id)) addVariantRow(svc); }
+                  reveal.remove();
+                };
+                vWrap.appendChild(reveal);
+              }
+
               card.appendChild(det);
-              card.querySelector('[data-expand]').onclick=()=>det.open=!det.open;
+              card.querySelector('[data-expand]').onclick=()=>{ det.open = !det.open; if(det.open){ det.scrollIntoView({behavior:'smooth', block:'nearest'}); } };
               grid.appendChild(card);
             }
             elWrap.appendChild(sec);
