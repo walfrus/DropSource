@@ -124,7 +124,9 @@ details[open] summary{opacity:.9}
         document.getElementById('reload').onclick = load;
         document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
         document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
-        elQ.oninput = load; elCat.onchange = load;
+        elQ.oninput = load;
+        // hide and disable the platform/source selector per requirements
+        if (elCat){ elCat.style.display = 'none'; elCat.onchange = null; }
         // keep only one <details> open on the whole page
         document.addEventListener('toggle', (ev) => {
           const det = ev.target;
@@ -135,17 +137,91 @@ details[open] summary{opacity:.9}
 
         function showErr(m){ console.error(m); const box=document.createElement('div'); box.className='loading'; box.textContent=m; elWrap.replaceChildren(box);} 
         // --- platform meta -----------------------------------------------------------
+        function normKey(s){
+          return String(s||'').toLowerCase().replace(/[^\p{L}\p{N}. ]+/gu,' ').trim().replace(/\s+/g,' ');
+        }
+
+        const ALLOWED_PLAT_LABELS = new Map([
+          ['instagram','Instagram'],
+          ['threads','Threads'],
+          ['youtube','YouTube'],
+          ['tiktok','TikTok'],
+          ['facebook','Facebook'],
+          ['twitter','X (Twitter)'],
+          ['x','X (Twitter)'],
+          ['x (twitter)','X (Twitter)'],
+          ['twitch','Twitch'],
+          ['discord','Discord'],
+          ['telegram','Telegram'],
+          ['snapchat','Snapchat'],
+          ['soundcloud','SoundCloud'],
+          ['spotify','Spotify'],
+          ['shazam','Shazam'],
+          ['pinterest','Pinterest'],
+          ['clubhouse','Clubhouse'],
+          ['imdb','IMDb'],
+          ['linkedin','LinkedIn'],
+          ['datpiff','DatPiff'],
+          ['vimeo','Vimeo'],
+          ['reverbnation','ReverbNation'],
+          ['vk','VK'],
+          ['tumblr','Tumblr'],
+          ['mixcloud','Mixcloud'],
+          ['podcast','Podcast (Apple Music)'],
+          ['podcast (apple music)','Podcast (Apple Music)'],
+          ['google business reviews','Google Business Reviews'],
+          ['tidal','Tidal'],
+          ['ok.ru','OK.ru'],
+          ['okru','OK.ru'],
+          ['quora','Quora'],
+          ['reddit','Reddit'],
+          ['coub','Coub'],
+          ['dailymotion','Dailymotion'],
+          ['rumble','Rumble'],
+          ['audiomack','Audiomack'],
+          ['webtraffic','WebTraffic'],
+          ['web traffic','WebTraffic'],
+          ['distribution','Distribution'],
+          ['chenhosting','ChenHosting'],
+          ['whatsapp','WhatsApp'],
+          ['kick','Kick'],
+          ['vpn','VPN'],
+        ]);
+
         const PLATFORM_COLORS = {
-          Instagram:'#E1306C', Telegram:'#2CA5E0', Twitter:'#1DA1F2', X:'#0F1419',
-          TikTok:'#EE1D52', Facebook:'#1877F2', YouTube:'#FF0000', Spotify:'#1DB954',
-          SoundCloud:'#FF5500', Threads:'#000000', VK:'#4C75A3', Twitch:'#9146FF',
-          Reddit:'#FF4500', Pinterest:'#E60023', LinkedIn:'#0A66C2', Snapchat:'#FFFC00',
-          Discord:'#5865F2', Shazam:'#0088FF', Vimeo:'#1AB7EA', Quora:'#B92B27',
-          Mixcloud:'#273A4B', 'OK.ru':'#F4731C', Audiomack:'#FFA200', Dailymotion:'#0066DC',
-          Reverbnation:'#000000', Tumblr:'#35465C', WhatsApp:'#25D366',
-          Website:'#59a0ff', Mobile:'#59a0ff', Crypto:'#f7931a', GeoTarget:'#59a0ff',
-          GoogleReviews:'#34a853', OwnWebsite:'#59a0ff', MaskedTraffic:'#59a0ff',
-          Podcast:'#ffa500', MassDM:'#59a0ff', Exchange:'#59a0ff', Other:'#59a0ff'
+          'Instagram':'#E1306C',
+          'Telegram':'#2CA5E0',
+          'Twitter':'#1DA1F2',
+          'X (Twitter)':'#0F1419',
+          'TikTok':'#EE1D52',
+          'Facebook':'#1877F2',
+          'YouTube':'#FF0000',
+          'Spotify':'#1DB954',
+          'SoundCloud':'#FF5500',
+          'Threads':'#000000',
+          'VK':'#4C75A3',
+          'Twitch':'#9146FF',
+          'Reddit':'#FF4500',
+          'Pinterest':'#E60023',
+          'LinkedIn':'#0A66C2',
+          'Snapchat':'#FFFC00',
+          'Discord':'#5865F2',
+          'Shazam':'#0088FF',
+          'Vimeo':'#1AB7EA',
+          'Quora':'#B92B27',
+          'Mixcloud':'#273A4B',
+          'OK.ru':'#F4731C',
+          'Audiomack':'#FFA200',
+          'Dailymotion':'#0066DC',
+          'ReverbNation':'#000000',
+          'Tumblr':'#35465C',
+          'WhatsApp':'#25D366',
+          'WebTraffic':'#59a0ff',
+          'Distribution':'#59a0ff',
+          'ChenHosting':'#59a0ff',
+          'Kick':'#59a0ff',
+          'VPN':'#59a0ff',
+          'Other':'#59a0ff',
         };
 
         function detectPlatform(str=''){
@@ -384,11 +460,17 @@ details[open] summary{opacity:.9}
               m.get(type).push(s);
             }
 
-            // fill platform filter if needed
-            if(!elCat.dataset.filled){
-              const plats = [...byPlat.keys()].sort();
-              for(const p of plats){ const o=document.createElement('option'); o.value=p; o.textContent=p; elCat.appendChild(o); }
-              elCat.dataset.filled='1';
+            // filter & normalize categories to the approved allowlist
+            const filteredByPlat = new Map();
+            for (const [plat, mapByType] of byPlat) {
+              const disp = ALLOWED_PLAT_LABELS.get(normKey(plat));
+              if (!disp) continue; // drop categories not in the CSV allowlist
+              if (!filteredByPlat.has(disp)) filteredByPlat.set(disp, new Map());
+              const dst = filteredByPlat.get(disp);
+              for (const [t, arr] of mapByType) {
+                if (!dst.has(t)) dst.set(t, []);
+                dst.get(t).push(...arr);
+              }
             }
 
             elWrap.innerHTML='';
@@ -396,7 +478,7 @@ details[open] summary{opacity:.9}
             // categories header
             const catsGrid = document.createElement('div');
             catsGrid.className='grid';
-            for (const [p, m] of byPlat) {
+            for (const [p, m] of filteredByPlat) {
               const catCard = document.createElement('div');
               catCard.className = 'card cat';
               catCard.style.setProperty('--plat', PLATFORM_COLORS[p] || PLATFORM_COLORS.Other);
@@ -431,8 +513,8 @@ details[open] summary{opacity:.9}
             elWrap.appendChild(catsGrid);
 
             // sections
-            const want = elCat.value;
-            for(const [plat, byType] of byPlat){
+            const want = ''; // selector is disabled; show all allowed categories
+            for(const [plat, byType] of filteredByPlat){
               if(want && plat!==want) continue;
               const color = PLATFORM_COLORS[plat] || PLATFORM_COLORS.Other;
 
