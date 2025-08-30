@@ -37,7 +37,37 @@
   border-radius:12px;
   padding:12px;
   transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+  position:relative;
 }
+
+    /* Gradient accent support (uses --plat-gradient when present) */
+    .card.cat{ overflow:hidden; }
+    .card.cat::before{
+      content:"";
+      position:absolute;
+      left:0; right:0; top:0; height:3px;
+      background: var(--plat-gradient, var(--plat, var(--brand)));
+      border-top-left-radius: inherit;
+      border-top-right-radius: inherit;
+      pointer-events:none;
+    }
+    /* Gradient outline on hover */
+    .card:hover{
+      border-color:var(--plat, var(--brand));
+      box-shadow:0 0 0 1px var(--plat, var(--brand)) inset, 0 10px 30px rgba(0,0,0,.25);
+    }
+    .card:hover::after{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      border-radius:inherit;
+      padding:1px;
+      background: var(--plat-gradient);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;
+      pointer-events:none;
+    }
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .muted{color:var(--muted)}
     .chip{background:var(--chip);border:1px solid var(--line);padding:3px 8px;border-radius:999px}
@@ -82,7 +112,9 @@
   box-shadow:0 0 0 1px var(--plat, var(--brand)) inset, 0 10px 30px rgba(0,0,0,.25)
 }
 .card.cat:hover{ transform:translateY(-1px); }
-.section .head:hover{ background:linear-gradient(90deg,var(--plat, var(--line)), transparent); }
+    .section .head:hover{
+      background: var(--plat-gradient, linear-gradient(90deg, var(--plat, var(--line)), transparent));
+    }
 
 /* Variant rows fit & layout */
 .variant{
@@ -345,6 +377,10 @@ details[open] summary{opacity:.9}
         const ALLOWED_PLAT_LABELS = new Map(RAW_ALLOWED_PLAT.map(([k,v]) => [normKey(k), v]));
 
         const PLATFORM_COLORS = {
+        // Optional multi-color gradients per platform
+        const PLATFORM_GRADIENTS = {
+          'Google Business Reviews': 'linear-gradient(90deg,#EA4335,#FBBC05,#34A853,#4285F4)' // Google red, yellow, green, blue
+        };
           'Instagram':'#E1306C',
           'Telegram':'#2CA5E0',
           'Twitter':'#1DA1F2',
@@ -378,7 +414,7 @@ details[open] summary{opacity:.9}
           'Kick':'#1AD451',
           'VPN':'#D4A21A',
           'Other':'#59a0ff',
-          'Google Business Reviews':'#402454',
+          'Google Business Reviews':'#FFEC6D',
           'Clubhouse':'#FFFC00',
           'Rumble':'#7DDA58',
           'IMDb':'#F2BE3B',
@@ -644,7 +680,8 @@ details[open] summary{opacity:.9}
               const catCard = document.createElement('div');
               catCard.className = 'card cat';
               catCard.style.setProperty('--plat', PLATFORM_COLORS[p] || PLATFORM_COLORS.Other);
-              catCard.style.borderTop = `3px solid ${PLATFORM_COLORS[p] || PLATFORM_COLORS.Other}`;
+              const _gradCat = PLATFORM_GRADIENTS[p];
+              if (_gradCat) catCard.style.setProperty('--plat-gradient', _gradCat);
 
               const catH3 = document.createElement('h3');
               catH3.style.display = 'flex';
@@ -684,6 +721,8 @@ details[open] summary{opacity:.9}
               sec.className = 'section';
               sec.setAttribute('data-plat', plat);
               sec.style.setProperty('--plat', color);
+              const _gradSec = PLATFORM_GRADIENTS[plat];
+              if (_gradSec) sec.style.setProperty('--plat-gradient', _gradSec);
 
               // head
               const head = document.createElement('div');
