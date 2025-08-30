@@ -139,9 +139,7 @@
       0 0 56px 14px color-mix(in oklab, var(--plat, #8aa6ff) 28%, transparent);
   }
 }
-    .section .head:hover{
-      background: var(--plat-gradient, linear-gradient(90deg, var(--plat, var(--line)), transparent));
-    }
+    
 
 /* Variant rows fit & layout */
 .variant{
@@ -160,7 +158,41 @@ details summary{list-style:none}
 details[open] summary{opacity:.9}
     .price{font-weight:700}
     .section{border:1px solid var(--line);border-radius:16px;margin:12px auto;max-width:1200px;overflow:hidden}
-    .section .head{display:flex;justify-content:space-between;padding:10px 12px;background:linear-gradient(90deg,var(--line),transparent);cursor:pointer}
+    .section .head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 12px; cursor:pointer;
+  background:linear-gradient(90deg,var(--line),transparent);
+  position:relative; overflow:hidden;
+}
+/* Smooth animated underline + left glow for section headers */
+.section .head::after{
+  content:"";
+  position:absolute; left:0; bottom:0; height:3px; width:100%;
+  background: var(--plat-gradient, linear-gradient(90deg, var(--plat, var(--brand)), transparent));
+  transform: scaleX(0); transform-origin: left;
+  opacity:.7;
+  transition: transform .35s ease, opacity .35s ease;
+}
+.section .head:hover::after{
+  transform: scaleX(1);
+  opacity:1;
+}
+
+/* Left-side glow bar */
+.section .head::before{
+  content:"";
+  position:absolute; left:0; top:10%; bottom:10%; width:4px;
+  background: var(--plat-gradient, var(--plat, var(--brand)));
+  filter: blur(6px);
+  opacity:0;
+  transform: translateX(-10px);
+  transition: transform .35s ease, opacity .35s ease, filter .35s ease;
+  border-radius:4px;
+}
+.section .head:hover::before{
+  opacity:1;
+  transform: translateX(0);
+}
     .section .body{display:none;padding:8px}
     .section.open .body{display:block}
     details{background:#0a1220;border:1px solid var(--line);border-radius:10px;padding:6px}
