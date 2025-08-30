@@ -232,7 +232,14 @@ details[open] summary{opacity:.9}
         const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
         const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
         const sb = window.supabase
-          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+              auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                flowType: 'pkce',
+                detectSessionInUrl: true
+              }
+            })
           : null;
         // Track whether the user is currently authenticated (quick UI checks)
         let isAuthed = false;
@@ -243,6 +250,27 @@ details[open] summary{opacity:.9}
         const elBalWrap = document.getElementById('balancePill');
         const elBalAmt  = document.getElementById('balanceAmt');
         const elUserInfo = document.getElementById('userInfo');
+        // Prime UI from cached session (so refresh/back doesn't appear signed out)
+        (function primeFromLocalStorage(){
+          try{
+            const key = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+            if(!key) return;
+            const raw = localStorage.getItem(key);
+            if(!raw) return;
+            const json = JSON.parse(raw);
+            const sess = json?.currentSession || json?.session;
+            if(!sess) return;
+            isAuthed = true;
+            // Fast path render while Supabase hydrates
+            if (elLogin)  elLogin.style.display = 'none';
+            if (elLogout) elLogout.style.display = '';
+            if (elDeposit) elDeposit.style.display = '';
+            if (elBalWrap) elBalWrap.style.display = 'flex';
+            if (elUserInfo) {
+              renderUserInfo(sess.user || {});
+            }
+          }catch(_){}
+        })();
         function renderUserInfo(user){
           if(!elUserInfo){ return; }
           elUserInfo.replaceChildren();
@@ -396,8 +424,20 @@ details[open] summary{opacity:.9}
           elLogin.onclick = (ev) => { ev.preventDefault(); signIn(); };
         }
         if(elLogout) elLogout.onclick = signOut;
-        if(sb) sb.auth.onAuthStateChange(()=>refreshAuthUI());
-        refreshAuthUI();
+        if (sb) {
+          sb.auth.onAuthStateChange(async (event, session) => {
+            // Persisted or redirected sessions arrive here too
+            isAuthed = !!session;
+            await refreshAuthUI();
+          });
+          // Ensure session is hydrated on first load/refresh
+          sb.auth.getSession().then(({ data:{ session } }) => {
+            isAuthed = !!session;
+            refreshAuthUI();
+          });
+        } else {
+          refreshAuthUI();
+        }
         // hide and disable the platform/source selector per requirements
         if (elCat){ elCat.style.display = 'none'; elCat.onchange = null; }
         // keep only one <details> open on the whole page
