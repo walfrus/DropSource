@@ -143,18 +143,8 @@
   </div>
 
   <div class="card">
-      <div class="row">
-        <div>
-          <label>Filter by category</label>
-          <select id="fcat"><option value="">All</option></select>
-        </div>
-        <div>
-          <label>Search</label>
-          <input id="find" placeholder="type to filter services"/>
-        </div>
-      </div>
       <label>Service</label>
-      <select id="svc"></select>
+      <input id="svcName" disabled />
 
       <div class="row">
         <div>
@@ -218,6 +208,26 @@ function slugify(s){
     .replace(/\s+/g, ' ')                  // collapse spaces
     .trim()
     .replace(/\s/g, '-');                  // to kebab
+}
+
+function categorizeFromName(name){
+  const n = String(name||'').toLowerCase();
+  if (n.includes('instagram') || n.includes('ig')) return 'instagram';
+  if (n.includes('threads')) return 'threads';
+  if (n.includes('youtube') || n.includes('yt')) return 'youtube';
+  if (n.includes('tiktok')) return 'tiktok';
+  if (n.includes('facebook') || n.includes('fb')) return 'facebook';
+  if (n.includes('twitter') || n.includes('x ' ) || n.startsWith('x ')) return 'x';
+  if (n.includes('twitch')) return 'twitch';
+  if (n.includes('discord')) return 'discord';
+  if (n.includes('telegram')) return 'telegram';
+  if (n.includes('snapchat')) return 'snapchat';
+  if (n.includes('spotify')) return 'spotify';
+  if (n.includes('soundcloud')) return 'soundcloud';
+  if (n.includes('pinterest')) return 'pinterest';
+  if (n.includes('google')) return 'google business reviews';
+  if (n.includes('web') && n.includes('traffic')) return 'webtraffic';
+  return 'other';
 }
 
 // --- minimal fetch helper that always adds user headers ---
@@ -363,49 +373,19 @@ async function loadCSV() {
     byName.set(s.slug, s);
   }
 
-  // build category filter list
-  const cats = Array.from(new Set(catalog.map(s => s.category))).sort((a,b)=>a.localeCompare(b));
-  const fcat = $('fcat');
-  fcat.innerHTML = '<option value="">All</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-
-  // render options (unfiltered list – we'll filter dynamically)
-  const el = $('svc');
-  el.innerHTML = catalog.map(s => {
-    const label = s.name;
-    return `<option value="${s.name.replace(/"/g,'&quot;')}" data-cat="${s.category}" data-slug="${s.slug}">${label}</option>`;
-  }).join('');
 }
+
+let chosen = null; // selected service record, set during init
 
 function selectedRecord(){
-  const sel = $('svc');
-  const opt = sel.selectedOptions[0];
-  const slug = opt?.dataset.slug;
-  const name = opt?.value || '';
-  return (slug && byName.get(slug)) || byName.get(name.toLowerCase()) || null;
+  return chosen;
 }
 
-function applyFilters(){
-  const q = $('find').value.trim().toLowerCase();
-  const cat = $('fcat').value;
-  const el = $('svc');
-  const keep = [];
-  for (const opt of Array.from(el.options)){
-    const matchesCat = !cat || opt.dataset.cat === cat;
-    const matchesText = !q || opt.textContent.toLowerCase().includes(q);
-    const show = matchesCat && matchesText;
-    opt.hidden = !show;
-    if (show) keep.push(opt);
-  }
-  // ensure one visible option is selected
-  const currentVisible = keep.find(o => o.selected);
-  if (!currentVisible && keep.length) keep[0].selected = true;
-  updateFromSelection();
-}
 
-function updateFromSelection() {
+function updateFromChosen() {
   const rec = selectedRecord();
   if (!rec) return;
-  const name = rec.name;
+  $('svcName').value = rec.name;
   $('cat').value = (rec.category || categorizeFromName(rec.name));
   $('cat').disabled = true;
   $('rate').value = `$${rec.rate.toFixed(2)} / 1k`;
@@ -464,10 +444,7 @@ function findServiceFromQuery(q){
 }
 
 // hook up UI
-$('svc').addEventListener('change', updateFromSelection);
 $('qty').addEventListener('input', estimate);
-$('find').addEventListener('input', applyFilters);
-$('fcat').addEventListener('change', applyFilters);
 
 $('create').onclick = async () => {
   $('msg').className = 'muted';
@@ -476,11 +453,12 @@ $('create').onclick = async () => {
     const { uid, email } = currentUser();
     if (!uid || !email){ $('msg').textContent = '❌ Sign in (or enter User ID + Email) first'; $('msg').className = 'err'; return; }
   }
-  const name = $('svc').value;
+  const rec = selectedRecord();
+  const name = rec?.name || '';
   const target = $('url').value.trim();
   const qty = Number($('qty').value || 0);
   if (!target) { $('msg').textContent = '❌ Enter a target URL'; $('msg').className = 'err'; return; }
-  if (!name || !byName.has(name.toLowerCase())) { $('msg').textContent = '❌ Pick a service'; $('msg').className = 'err'; return; }
+  if (!rec) { $('msg').textContent = '❌ No service selected. Go back and choose a service.'; $('msg').className = 'err'; return; }
 
   const serviceId = await resolveServiceIdByName(name);
   if (!serviceId) { $('msg').textContent = '❌ Could not match this service to provider'; $('msg').className = 'err'; return; }
@@ -512,20 +490,19 @@ $('create').onclick = async () => {
   await refreshBalance();
   await loadCSV();
   const qp = params();
-  // Preselect by name/slug/index if present
   let picked = null;
   if (qp.idx && catalog[Number(qp.idx)]) picked = catalog[Number(qp.idx)];
   if (!picked && qp.slug) picked = byName.get(String(qp.slug).toLowerCase()) || byName.get(String(qp.slug));
   if (!picked && qp.name) picked = findServiceFromQuery(qp.name);
-  // Choose the option matching the picked record
-  if (picked){
-    const el = $('svc');
-    const match = Array.from(el.options).find(o => o.dataset.slug === picked.slug);
-    if (match) match.selected = true;
-    // auto-filter to its category so the list is smaller
-    $('fcat').value = picked.category || '';
+
+  chosen = picked || null;
+  if (!chosen){
+    $('msg').className = 'err';
+    $('msg').textContent = '❌ No service selected. Go back and choose a service.';
+    return;
   }
-  applyFilters();
+  updateFromChosen();
+
   // Pre-fill target URL if supplied
   if (qp.link) $('url').value = qp.link;
   estimate();
