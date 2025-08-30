@@ -339,6 +339,28 @@ details[open] summary{opacity:.9}
           await signIn();
           return false;
         }
+        function redirectToPurchase(payload){
+          const params = new URLSearchParams({
+            // primary keys expected by purchase.html
+            source: 'csv',
+            category: payload.category || '',
+            service: payload.service || '',
+            title: payload.title || payload.service || '',
+            rate: payload.rate != null ? String(payload.rate) : '',
+            min: payload.min != null ? String(payload.min) : '',
+            max: payload.max != null ? String(payload.max) : '',
+            id: payload.id != null ? String(payload.id) : '',
+            slug: payload.slug || '',
+            link: payload.link || '',
+            // legacy duplicates for backward-compat with older purchase.html
+            plat: payload.category || '',
+            name: payload.service || ''
+          });
+          location.href = '/purchase.html?' + params.toString();
+        }
+        function goToPurchase(payload){
+          ensureAuth().then(ok => { if (ok !== false) redirectToPurchase(payload); });
+        }
         if (elLogin) {
           elLogin.onclick = (ev) => { ev.preventDefault(); signIn(); };
         }
@@ -924,13 +946,18 @@ details[open] summary{opacity:.9}
                 // Compose card
                 card.replaceChildren(h3, chipsRow, priceRow);
 
-                card.querySelector('button.btn').onclick = (ev)=>{
-                  const d = ev.currentTarget.dataset;
-                  const qs = new URLSearchParams({
-                    id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
-                    rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
+                card.querySelector('button.btn').onclick = ()=>{
+                  goToPurchase({
+                    id: String(cheapest.id || ''),
+                    category: plat,
+                    service: cheapest.name,         // use the concrete variant name
+                    title: cheapest.name,
+                    rate: cheapest.price_per_1k,
+                    min: cheapest.min,
+                    max: cheapest.max,
+                    slug: slugify(plat + ' ' + type),
+                    link: ''
                   });
-                  ensureAuth().then((ok)=>{ if(ok!==false) location.href = `/purchase.html?${qs.toString()}`; });
                 };
 
                 const det = document.createElement('details');
@@ -1003,13 +1030,18 @@ details[open] summary{opacity:.9}
                   right.append(vPrice, vBtn);
 
                   row.replaceChildren(left, right);
-                  row.querySelector('button.btn').onclick = (ev)=>{
-                    const d = ev.currentTarget.dataset;
-                    const qs = new URLSearchParams({
-                      id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
-                      rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
+                  row.querySelector('button.btn').onclick = ()=>{
+                    goToPurchase({
+                      id: String(svc.id || ''),
+                      category: plat,
+                      service: svc.name,             // exact variant picked
+                      title: svc.name,
+                      rate: svc.price_per_1k,
+                      min: svc.min,
+                      max: svc.max,
+                      slug: slugify(plat + ' ' + type),
+                      link: ''
                     });
-                    ensureAuth().then((ok)=>{ if(ok!==false) location.href = `/purchase.html?${qs.toString()}`; });
                   };
                   vWrap.appendChild(row);
                 }
