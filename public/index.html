@@ -8,7 +8,10 @@
     :root{--bg:#0b0f16;--fg:#e6edf7;--muted:#9fb3c8;--chip:#1a2230;--brand:#8aa6ff;--card:#0f1520;--line:#1b2434;--btn:#1b2a45;--btn-fg:#e6edf7}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,Segoe UI,Helvetica,Arial,sans-serif}
     header{position:sticky;top:0;background:#0d1421;border-bottom:1px solid var(--line);padding:10px 12px;z-index:5}
-    header .row{display:flex;align-items:center;gap:10px;max-width:1200px;margin:0 auto}
+    header > .row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;max-width:1200px;margin:0 auto}
+#midbar{justify-self:center;gap:8px}
+#authbar{justify-self:end;gap:8px}
+.card.cat h3 > span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .brand{color:var(--brand);font-weight:800}
     #toolbar{display:flex;gap:8px;max-width:1200px;margin:12px auto 0}
     input,select,button{background:#0e1726;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
@@ -112,14 +115,19 @@ details[open] summary{opacity:.9}
 <body>
   <header>
     <div class="row">
-      <div class="brand">DropSource</div>
-      <div class="muted">Boosts marketplace</div>
-      <div id="authbar" class="row" style="margin-left:auto;gap:8px">
+      <div class="row" id="brandbar">
+        <div class="brand">DropSource</div>
+        <div class="muted">Boosts marketplace</div>
+      </div>
+      <div id="midbar" class="row">
         <div id="balancePill" class="balance-pill" style="display:none">
           <span class="sym">$</span>
           <span id="balanceAmt">$0.00</span>
         </div>
         <button id="depositBtn" class="btn gold" style="display:none">Deposit</button>
+      </div>
+      <div id="authbar" class="row">
+        <div id="userInfo" class="row" style="display:none;gap:8px"></div>
         <button id="loginBtn" class="btn">Sign in</button>
         <button id="logoutBtn" class="btn" style="display:none">Sign out</button>
       </div>
@@ -176,6 +184,32 @@ details[open] summary{opacity:.9}
         const elDeposit = document.getElementById('depositBtn');
         const elBalWrap = document.getElementById('balancePill');
         const elBalAmt  = document.getElementById('balanceAmt');
+        const elUserInfo = document.getElementById('userInfo');
+        function renderUserInfo(user){
+          if(!elUserInfo){ return; }
+          elUserInfo.replaceChildren();
+          if(!user){
+            elUserInfo.style.display = 'none';
+            return;
+          }
+          const email = user?.email || user?.user_metadata?.email || '';
+          const avatar = user?.user_metadata?.avatar_url;
+          if (avatar){
+            const img = document.createElement('img');
+            img.src = avatar;
+            img.alt = '';
+            img.width = 20; img.height = 20;
+            img.style.borderRadius = '50%';
+            img.style.objectFit = 'cover';
+            img.referrerPolicy = 'no-referrer';
+            elUserInfo.appendChild(img);
+          }
+          const txt = document.createElement('span');
+          txt.className = 'muted';
+          txt.textContent = email ? `Signed in as ${email}` : 'Signed in';
+          elUserInfo.appendChild(txt);
+          elUserInfo.style.display = 'flex';
+        }
 
         async function refreshAuthUI(){
           if(!sb){ // no Supabase configured; hide auth-dependent UI
@@ -183,6 +217,7 @@ details[open] summary{opacity:.9}
             if (elBalWrap) elBalWrap.style.display = 'none';
             if (elLogin)  elLogin.style.display = '';
             if (elLogout) elLogout.style.display = 'none';
+            if (elUserInfo) elUserInfo.style.display = 'none';
             return;
           }
           const { data:{ session } } = await sb.auth.getSession();
@@ -191,6 +226,10 @@ details[open] summary{opacity:.9}
           if (elLogout) elLogout.style.display = isAuthed ? '' : 'none';
           if (elDeposit) elDeposit.style.display = isAuthed ? '' : 'none';
           if (elBalWrap) elBalWrap.style.display = isAuthed ? 'flex' : 'none';
+          if (elUserInfo){
+            if (isAuthed && session?.user) renderUserInfo(session.user);
+            else renderUserInfo(null);
+          }
           if (isAuthed) { try{ await refreshBalance(); }catch(_){} }
         }
         async function signIn(){
