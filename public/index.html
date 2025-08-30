@@ -419,8 +419,10 @@ details[open] summary{opacity:.9}
         }
         function redirectToPurchase(payload){
           const params = new URLSearchParams({
+            
             // primary keys expected by purchase.html
             source: 'csv',
+            kind: payload.kind || inferKindFromName(payload.title || payload.service || '', payload.category || '', ''),
             category: payload.category || '',
             service: payload.service || '',
             title: payload.title || payload.service || '',
@@ -661,7 +663,34 @@ window.addEventListener('load', () => { setTimeout(refreshAuthUI, 50); });
         ];
         // Temporarily disable entire service types (e.g., Comments) from UI
 const DISABLED_TYPES = new Set(['Comments']);
-        function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
+
+function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
+
+// Map a service name (plus optional platform/type) to an API "kind" for purchase page
+function inferKindFromName(name = "", plat = "", baseType = "") {
+  const s = String(name).toLowerCase();
+  const p = String(plat).toLowerCase();
+  const t = String(baseType).toLowerCase();
+
+  // Web traffic / SEO
+  if (/\bweb\s*traffic\b|masked\s*traffic|seo\b|visits?\b/.test(s) || p.includes('webtraffic') || p.includes('web traffic')) return 'web_traffic';
+  // Polls
+  if (/\bpoll\b/.test(s)) return 'poll';
+  // Subscriptions
+  if (/subscriptions?|\bsubscr\b/.test(s)) return 'subscriptions';
+  // Invites from groups
+  if (/invites?\s*from\s*groups?/.test(s) || (/\bgroups?\b/.test(s) && /invite/.test(s))) return 'invites_from_groups';
+  // Mentions families
+  if (/mentions?\s*with\s*hashtags?/.test(s) || (/mentions?/.test(s) && /hashtags?/.test(s))) return 'mentions_with_hashtags';
+  if (/mentions?\s*custom\b/.test(s)) return 'mentions_custom';
+  if (/mentions?\s*(user|users?)\s*followers?/.test(s)) return 'mentions_user_followers';
+  // Comments families
+  if (/custom\s*comments?/.test(s)) return 'custom_comments';
+  if (/comments?\s*package/.test(s)) return 'comments_package';
+
+  // Default catch-all (likes, views, followers, etc.)
+  return 'default';
+}
 
         function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
         function formatK(n){ n = Number(n||0); if(n>=1_000_000) return (n/1_000_000).toFixed(n%1_000_000?1:0)+'M'; if(n>=1_000) return (n/1_000).toFixed(n%1_000?1:0)+'K'; return String(n); }
@@ -1043,6 +1072,7 @@ const DISABLED_TYPES = new Set(['Comments']);
 
                 const orderBtn = document.createElement('button');
                 orderBtn.className = 'btn';
+                orderBtn.setAttribute('data-action','order');
                 orderBtn.dataset.id = `${cheapest.id}`;
                 orderBtn.dataset.plat = `${plat}`;
                 orderBtn.dataset.type = `${type}`;
@@ -1050,7 +1080,8 @@ const DISABLED_TYPES = new Set(['Comments']);
                 orderBtn.dataset.min = `${cheapest.min}`;
                 orderBtn.dataset.max = `${cheapest.max}`;
                 orderBtn.dataset.title = `${cheapest.name}`;
-                orderBtn.dataset.name = `${type}`;
+                orderBtn.dataset.name = `${cheapest.name}`;
+                orderBtn.dataset.service = `${cheapest.name}`;
                 orderBtn.dataset.slug = `${slugify(plat + ' ' + type)}`;
                 orderBtn.textContent = 'Order cheapest';
 
@@ -1077,7 +1108,8 @@ const DISABLED_TYPES = new Set(['Comments']);
                     min: cheapest.min,
                     max: cheapest.max,
                     slug: slugify(plat + ' ' + type),
-                    link: ''
+                    link: '',
+                    kind: inferKindFromName(cheapest.name, plat, type)
                   });
                 };
 
@@ -1139,6 +1171,7 @@ const DISABLED_TYPES = new Set(['Comments']);
 
                   const vBtn = document.createElement('button');
                   vBtn.className = 'btn';
+                  vBtn.setAttribute('data-action','order');
                   vBtn.dataset.id = `${svc.id}`;
                   vBtn.dataset.plat = `${plat}`;
                   vBtn.dataset.type = `${type}`;
@@ -1146,7 +1179,8 @@ const DISABLED_TYPES = new Set(['Comments']);
                   vBtn.dataset.min = `${svc.min}`;
                   vBtn.dataset.max = `${svc.max}`;
                   vBtn.dataset.title = `${svc.name}`;
-                  vBtn.dataset.name = `${type}`;
+                  vBtn.dataset.name = `${svc.name}`;
+                  vBtn.dataset.service = `${svc.name}`;
                   vBtn.dataset.slug = `${slugify(plat + ' ' + type)}`;
                   vBtn.textContent = 'Order';
 
@@ -1164,7 +1198,8 @@ const DISABLED_TYPES = new Set(['Comments']);
                       min: svc.min,
                       max: svc.max,
                       slug: slugify(plat + ' ' + type),
-                      link: ''
+                      link: '',
+                      kind: inferKindFromName(svc.name, plat, type)
                     });
                   };
                   vWrap.appendChild(row);
@@ -1204,8 +1239,39 @@ const DISABLED_TYPES = new Set(['Comments']);
 }
         // initial load
         load();
+        // --- Expose helpers globally + delegated click for static buttons ---
+        window.slugify = slugify;
+        window.inferKindFromName = inferKindFromName;
+        window.goToPurchase = goToPurchase;
+
+        document.addEventListener('click', function(e){
+          const el = e.target.closest('[data-go="purchase"],[data-action="order"],.js-order');
+          if (!el) return;
+          e.preventDefault();
+
+          const plat = el.getAttribute('data-category') || el.getAttribute('data-plat') || el.getAttribute('data-platform') || '';
+          const type = el.getAttribute('data-type') || '';
+          const name = el.getAttribute('data-name') || el.getAttribute('data-service') || (plat ? (plat + ' ' + type) : '');
+          const rate = parseFloat(el.getAttribute('data-rate') || '0') || 0;
+          const min = parseInt(el.getAttribute('data-min') || '0', 10) || 0;
+          const max = parseInt(el.getAttribute('data-max') || '0', 10) || 0;
+          const slugAttr = el.getAttribute('data-slug');
+          const kind = inferKindFromName(name, plat, type);
+
+          goToPurchase({
+            id: String(el.getAttribute('data-id') || ''),
+            category: plat,
+            service: name,
+            title: name,
+            rate, min, max,
+            slug: slugAttr || slugify((plat + ' ' + type).trim() || name),
+            link: el.getAttribute('data-link') || '',
+            kind
+          });
+        }, true);
       }catch(e){ showFatal(e); }
     })();
   </script>
+  
 </body>
 </html>
