@@ -659,6 +659,8 @@ window.addEventListener('load', () => { setTimeout(refreshAuthUI, 50); });
           ['Traffic', /traffic|visits?/i],
           ['Other', /.*/]
         ];
+        // Temporarily disable entire service types (e.g., Comments) from UI
+const DISABLED_TYPES = new Set(['Comments']);
         function getBaseType(name){ for(const [label,rx] of TYPE_PATTERNS) if (rx.test(name)) return label; return 'Other'; }
 
         function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
@@ -963,6 +965,7 @@ window.addEventListener('load', () => { setTimeout(refreshAuthUI, 50); });
 
               const grid = gridEl;
               for(const [type, list0] of byType){
+                if (DISABLED_TYPES.has(type)) continue;
                 const list = list0.slice().sort((a,b)=>a.price_per_1k - b.price_per_1k);
                 if (!list.length) continue;
                 const cheapest = list[0];
@@ -1191,8 +1194,14 @@ window.addEventListener('load', () => { setTimeout(refreshAuthUI, 50); });
           }catch(e){ showFatal(e); }
         }
 
-        function countServices(map){ let n=0; for(const [,arr] of map) n+=arr.length; return n; }
-
+        function countServices(map){
+  let n = 0;
+  for (const [t, arr] of map) {
+    if (typeof DISABLED_TYPES !== 'undefined' && DISABLED_TYPES.has(t)) continue;
+    n += arr.length;
+  }
+  return n;
+}
         // initial load
         load();
       }catch(e){ showFatal(e); }
