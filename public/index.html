@@ -3,9 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Supply your Supabase project settings here (prod). For local dev you can still rely on window.SUPABASE_URL / window.SUPABASE_ANON_KEY -->
-  <meta name="supabase-url" content="https://oyibixfoiwizpphuimkl.supabase.co">
-  <meta name="supabase-key" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg">
   <title>DropSource — Boosts</title>
   <style>
     :root{--bg:#0b0f16;--fg:#e6edf7;--muted:#9fb3c8;--chip:#1a2230;--brand:#8aa6ff;--card:#0f1520;--line:#1b2434;--btn:#1b2a45;--btn-fg:#e6edf7}
@@ -232,57 +229,11 @@ details[open] summary{opacity:.9}
         elQ.oninput = load;
 
         // --- Supabase Auth (Google + Email/Magic) -----------------------------------
-        // Prefer meta tags or window vars; avoid hard-coded fallbacks in production
-        const __envUrl = document.querySelector('meta[name="supabase-url"]')?.content || window.SUPABASE_URL || '';
-        const __envKey = document.querySelector('meta[name="supabase-key"]')?.content || window.SUPABASE_ANON_KEY || '';
-        const __isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-        // Optional local dev fallback (kept for localhost only)
-        const SUPABASE_URL = __envUrl || (__isLocal ? 'https://oyibixfoiwizpphuimkl.supabase.co' : '');
-        const SUPABASE_ANON_KEY = __envKey || (__isLocal ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg' : '');
-        let sb = null;
-        if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
-          sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-              persistSession: true,
-              autoRefreshToken: true,
-              flowType: 'pkce',
-              detectSessionInUrl: false
-            }
-          });
-        } else {
-          console.warn('Supabase URL/key missing; auth disabled on this page.');
-        }
-        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-          console.warn('Supabase URL/key missing. Set <meta name="supabase-url"> and <meta name="supabase-key"> or window.SUPABASE_URL/window.SUPABASE_ANON_KEY.');
-        }
-        // Explicitly handle OAuth redirect -> exchange code for session (robust across hosts)
-        async function handleOAuthRedirect(){
-          if(!sb) return;
-          try{
-            const hasCode = /[?&]code=/.test(location.search);
-            if(!hasCode) return;
-            const { data, error } = await sb.auth.exchangeCodeForSession(window.location.href);
-            if (error) {
-              showFatal(error);
-              return;
-            }
-            // ensure session is hydrated before we render
-            try { await sb.auth.getSession(); } catch(_){}
-            try { await refreshAuthUI(); } catch(_){}
-            // Strip OAuth params from URL to avoid repeated exchanges on reload
-            try { history.replaceState({}, document.title, location.pathname); } catch(_){}
-          }catch(err){
-            console.warn('handleOAuthRedirect exception:', err);
-          }
-        }
-        // Kick off redirect handler ASAP; then refresh UI once session is set
-        handleOAuthRedirect().then(()=>{ try{ refreshAuthUI(); }catch(_){} });
-        // Keep UI in sync if Supabase updates localStorage asynchronously
-        window.addEventListener('storage', (e) => {
-          if (e.key && e.key.startsWith('sb-') && e.key.endsWith('-auth-token')) {
-            refreshAuthUI();
-          }
-        });
+        const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
+        const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
+        const sb = window.supabase
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          : null;
         // Track whether the user is currently authenticated (quick UI checks)
         let isAuthed = false;
 
@@ -292,27 +243,6 @@ details[open] summary{opacity:.9}
         const elBalWrap = document.getElementById('balancePill');
         const elBalAmt  = document.getElementById('balanceAmt');
         const elUserInfo = document.getElementById('userInfo');
-        // Prime UI from cached session (so refresh/back doesn't appear signed out)
-        (function primeFromLocalStorage(){
-          try{
-            const key = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
-            if(!key) return;
-            const raw = localStorage.getItem(key);
-            if(!raw) return;
-            const json = JSON.parse(raw);
-            const sess = json?.currentSession || json?.session;
-            if(!sess) return;
-            isAuthed = true;
-            // Fast path render while Supabase hydrates
-            if (elLogin)  elLogin.style.display = 'none';
-            if (elLogout) elLogout.style.display = '';
-            if (elDeposit) elDeposit.style.display = '';
-            if (elBalWrap) elBalWrap.style.display = 'flex';
-            if (elUserInfo) {
-              renderUserInfo(sess.user || {});
-            }
-          }catch(_){}
-        })();
         function renderUserInfo(user){
           if(!elUserInfo){ return; }
           elUserInfo.replaceChildren();
@@ -369,7 +299,7 @@ details[open] summary{opacity:.9}
             const { data, error } = await sb.auth.signInWithOAuth({
               provider: 'google',
               options: {
-                redirectTo: `${window.location.origin}${window.location.pathname}`, // must be whitelisted in Supabase Auth redirect URLs
+                redirectTo: window.location.origin + '/', // send back to site root
                 queryParams: { prompt: 'select_account' }
               }
             });
@@ -466,20 +396,8 @@ details[open] summary{opacity:.9}
           elLogin.onclick = (ev) => { ev.preventDefault(); signIn(); };
         }
         if(elLogout) elLogout.onclick = signOut;
-        if (sb) {
-          sb.auth.onAuthStateChange(async (event, session) => {
-            // Persisted or redirected sessions arrive here too
-            isAuthed = !!session;
-            await refreshAuthUI();
-          });
-          // Ensure session is hydrated on first load/refresh
-          sb.auth.getSession().then(({ data:{ session } }) => {
-            isAuthed = !!session;
-            refreshAuthUI();
-          });
-        } else {
-          refreshAuthUI();
-        }
+        if(sb) sb.auth.onAuthStateChange(()=>refreshAuthUI());
+        refreshAuthUI();
         // hide and disable the platform/source selector per requirements
         if (elCat){ elCat.style.display = 'none'; elCat.onchange = null; }
         // keep only one <details> open on the whole page
