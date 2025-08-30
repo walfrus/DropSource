@@ -106,12 +106,7 @@
     .hidden{display:none}
 
     /* auth row + provider select */
-    .auth{display:grid;grid-template-columns:1fr auto auto;gap:12px;margin-top:12px}
-    #provider{padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)}
-
-    /* primary/secondary buttons */
-    #logout{background:#111827;border-color:#2a3951}
-    #login{background:transparent}
+  
     #create{background:linear-gradient(180deg,#1d2b45,#16233a);border-color:#3b82f6}
 
     .muted{color:var(--muted)}
@@ -136,7 +131,15 @@
   const SUPABASE_URL  = 'https://oyibixfoiwizpphuimkl.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
   const HAS_SUPABASE  = typeof window !== 'undefined' && !!window.supabase && SUPABASE_URL.startsWith('http');
-  const supa = HAS_SUPABASE ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+  const supa = HAS_SUPABASE
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    })
+  : null;
 </script>
 </head>
 <body>
@@ -154,17 +157,7 @@
         <input id="email" placeholder="you@example.com" />
       </div>
     </div>
-    <div class="auth">
-      <select id="provider" aria-label="Choose sign-in provider">
-        <option value="google">Google</option>
-        <option value="github">GitHub</option>
-        <option value="apple">Apple</option>
-        <option value="discord">Discord</option>
-        <option value="email">Email link</option>
-      </select>
-      <button id="login">Sign in</button>
-      <button id="logout">Sign out</button>
-    </div>
+    
     
     <p class="muted">Balance: <b id="bal">$0.00</b></p>
   </div>
@@ -211,16 +204,14 @@ const $ = (id)=>document.getElementById(id);
 
 // persist pseudo-login locally (temporary until real auth)
 const KEY='ds_user';
-const KEY_PROV='ds_provider';
-function loadProvider(){ return localStorage.getItem(KEY_PROV) || 'google'; }
-function saveProvider(p){ localStorage.setItem(KEY_PROV, p); }
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}'); }catch{ return {}; } }
 function saveUser(uid,email){ localStorage.setItem(KEY, JSON.stringify({uid,email})); }
 function applyUser(){
   const u=loadUser();
   if(u.uid) $('uid').value=u.uid;
   if(u.email) $('email').value=u.email;
-  if ($('provider')) $('provider').value = loadProvider();
+  if ($('uid')) $('uid').disabled = true;
+  if ($('email')) $('email').disabled = true;
 }
 
 // --- helpers ---
@@ -291,17 +282,14 @@ async function refreshBalance(){
   }
 }
 
-function setAuthUI(loggedIn){
-  const has = !!loggedIn;
-  if ($('login')) $('login').classList.toggle('hidden', has);
-  if ($('logout')) $('logout').classList.toggle('hidden', !has);
-  if ($('uid')) $('uid').disabled = has;
-  if ($('email')) $('email').disabled = has;
-  if ($('provider')) $('provider').disabled = has;
+function setAuthUI(_loggedIn){
+  if ($('uid')) $('uid').disabled = true;
+  if ($('email')) $('email').disabled = true;
 }
 async function bootstrapAuth(){
   if (!supa) { setAuthUI(false); return; }
-  const { data: { user } } = await supa.auth.getUser();
+  const { data: { session } } = await supa.auth.getSession();
+  const user = session?.user || null;
   if (user){
     saveUser(user.id, user.email || user.user_metadata?.email || '');
     applyUser();
@@ -324,33 +312,6 @@ async function bootstrapAuth(){
       await refreshBalance();
     }
   });
-  if ($('provider')){
-    $('provider').onchange = ()=> saveProvider($('provider').value);
-  }
-  if ($('login')) $('login').onclick = async ()=>{
-    if (!supa){ alert('Auth not configured'); return; }
-    const provider = $('provider') ? $('provider').value : 'google';
-    saveProvider(provider);
-    if (provider === 'email'){
-      const email = prompt('Enter your email for a magic sign-in link:');
-      if (!email) return;
-      const { error } = await supa.auth.signInWithOtp({
-        email,
-        options:{ emailRedirectTo: location.href }
-      });
-      if (error) alert(error.message || 'Email sign-in failed');
-      else alert('Check your email for the sign-in link.');
-      return;
-    }
-    await supa.auth.signInWithOAuth({
-      provider,
-      options:{ redirectTo: location.href }
-    });
-  };
-  if ($('logout')) $('logout').onclick = async ()=>{
-    if (!supa) return;
-    await supa.auth.signOut();
-  };
 }
 
 // CSV columns (exact): name,rate_per_1k_usd,min,max,(optional) category
@@ -542,22 +503,50 @@ $('create').onclick = async () => {
 // init
 (async function init(){
   applyUser();
-  if ($('provider')) $('provider').value = loadProvider();
   await bootstrapAuth();
   await refreshBalance();
   await loadCSV();
   const qp = params();
   let picked = null;
+
+  // 1) Direct index
   if (qp.idx && catalog[Number(qp.idx)]) picked = catalog[Number(qp.idx)];
+
+  // 2) Slug/name lookup in CSV
   if (!picked && qp.slug) picked = byName.get(String(qp.slug).toLowerCase()) || byName.get(String(qp.slug));
-  if (!picked && qp.name) picked = findServiceFromQuery(qp.name);
+  const qName = qp.service || qp.title || qp.name;
+  if (!picked && qName) picked = findServiceFromQuery(qName);
+
+  // 3) If still not found, synthesize from query (allows home page to send raw values)
+  if (!picked && qName){
+    const rate = Number(qp.rate);
+    const min  = Number.isFinite(Number(qp.min)) ? Number(qp.min) : 0;
+    const max  = Number.isFinite(Number(qp.max)) ? Number(qp.max) : 0;
+    const category = (qp.category || categorizeFromName(qName));
+    picked = {
+      name: qName,
+      rate: Number.isFinite(rate) ? rate : 0,
+      min, max, category,
+      slug: slugify(qName)
+    };
+  }
 
   chosen = picked || null;
+
+  // If CSV found but URL overrides provided, apply gentle overrides
+  if (chosen){
+    if (Number.isFinite(Number(qp.rate))) chosen.rate = Number(qp.rate);
+    if (Number.isFinite(Number(qp.min)))  chosen.min  = Number(qp.min);
+    if (Number.isFinite(Number(qp.max)))  chosen.max  = Number(qp.max);
+    if (qp.category) chosen.category = qp.category;
+  }
+
   if (!chosen){
     $('msg').className = 'err';
     $('msg').textContent = '❌ No service selected. Go back and choose a service.';
     return;
   }
+
   updateFromChosen();
 
   // Pre-fill target URL if supplied
