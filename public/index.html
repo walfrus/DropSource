@@ -669,26 +669,53 @@ details[open] summary{opacity:.9}
         function normalizeCsvWithMarkers(csvText) {
           const lines = csvText.split(/\r?\n/);
           let currentCat = "";
+          let headerAdded = false;
           const out = [];
+          // Accept header whether quoted or not, with variable whitespace/casing
+          const headerRx = /^\s*"?name"?\s*,\s*"?rate_per_1k_usd"?\s*,\s*"?min"?\s*,\s*"?max"?\s*$/i;
           for (let raw of lines) {
             if (raw == null) continue;
             const line = raw.trim();
             if (!line) continue; // skip blank spacer lines
-            if (line.startsWith("*//")) {
+
+            // Category marker lines like *//Instagram
+            if (/^\*\/\//.test(line)) {
               currentCat = line.replace(/^\*\/\/\s*/, "").trim();
               continue;
             }
-            // header: extend with category column
-            if (line.startsWith(`"name","rate_per_1k_usd","min","max"`)) {
+
+            // Header line -> append synthetic category column
+            if (!headerAdded && headerRx.test(line)) {
               out.push(`${line},"__cat__"`);
+              headerAdded = true;
               continue;
             }
-            // data row (quoted)
-            if (line.startsWith(`"`)) {
-              out.push(`${line},"${currentCat}"`);
+
+            // Treat anything that looks like a data row (>= 4 columns) as a record
+            // Count CSV columns respecting quotes so commas inside quotes don't split
+            const countCols = (s) => {
+              let c = 0, q = false;
+              for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (ch === '"') q = !q;
+                else if (ch === ',' && !q) c++;
+              }
+              return c + 1; // commas + 1
+            };
+
+            const isPossiblyData = line.includes(',') && countCols(line) >= 4;
+            if (isPossiblyData) {
+              const cols = countCols(line);
+              // If the CSV already includes a category as the 5th column, keep as-is
+              if (cols >= 5) {
+                out.push(line);
+              } else {
+                out.push(`${line},"${currentCat}"`);
+              }
               continue;
             }
-            // ignore any other non-data lines
+
+            // Ignore all other lines
           }
           return out.join("\n");
         }
