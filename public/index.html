@@ -164,34 +164,20 @@ details[open] summary{opacity:.9}
   background:linear-gradient(90deg,var(--line),transparent);
   position:relative; overflow:hidden;
 }
-/* Smooth animated underline + left glow for section headers */
+/* Smooth full-box gradient sweep for section headers */
 .section .head::after{
   content:"";
-  position:absolute; left:0; bottom:0; height:3px; width:100%;
+  position:absolute; left:0; top:0; width:100%; height:100%;
   background: var(--plat-gradient, linear-gradient(90deg, var(--plat, var(--brand)), transparent));
-  transform: scaleX(0); transform-origin: left;
-  opacity:.7;
-  transition: transform .35s ease, opacity .35s ease;
+  opacity:.12;                       /* subtle base tint */
+  transform: scaleX(0);              /* start collapsed on the left */
+  transform-origin:left;
+  transition: transform .35s ease, opacity .35s ease; 
+  pointer-events:none; border-radius:inherit;
 }
 .section .head:hover::after{
-  transform: scaleX(1);
-  opacity:1;
-}
-
-/* Left-side glow bar */
-.section .head::before{
-  content:"";
-  position:absolute; left:0; top:10%; bottom:10%; width:4px;
-  background: var(--plat-gradient, var(--plat, var(--brand)));
-  filter: blur(6px);
-  opacity:0;
-  transform: translateX(-10px);
-  transition: transform .35s ease, opacity .35s ease, filter .35s ease;
-  border-radius:4px;
-}
-.section .head:hover::before{
-  opacity:1;
-  transform: translateX(0);
+  transform: scaleX(1);              /* sweep across */
+  opacity:.22;                       /* slightly brighter on hover */
 }
     .section .body{display:none;padding:8px}
     .section.open .body{display:block}
