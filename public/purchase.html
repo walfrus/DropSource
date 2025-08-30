@@ -74,7 +74,7 @@
     .help{font-size:12px;color:var(--muted);margin-top:4px}
     input[disabled]{background:#0b1524;color:#91a7c0}
 
-    .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    .buttons{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}
     .small{font-size:12px}
     .hidden{display:none}
 
@@ -86,7 +86,19 @@
     #logout{background:#111827;border-color:#2a3951}
     #login{background:transparent}
     #create{background:linear-gradient(180deg,#1d2b45,#16233a);border-color:#3b82f6}
-    #add5,#add5c,#addCustom{background:#0e1626}
+
+    .muted{color:var(--muted)}
+    #bal{
+      display:inline-block;
+      padding:4px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,215,0,0.30);
+      background: linear-gradient(90deg,#fff1a6,#ffd76b,#ffbf36,#ffd76b,#fff1a6);
+      color:#1a1400;
+      font-weight:800;
+      letter-spacing:.2px;
+      box-shadow: 0 0 0 1px rgba(255,215,0,0.15) inset, 0 2px 8px rgba(0,0,0,.25), 0 0 16px rgba(255,215,0,.08);
+    }
 
     @media (max-width:720px){ .wrap{max-width:640px} }
     @media (max-width:520px){ .row{grid-template-columns:1fr} .auth{grid-template-columns:1fr 1fr; } #provider{grid-column:1/-1} }
@@ -115,7 +127,6 @@
         <input id="email" placeholder="you@example.com" />
       </div>
     </div>
-    <button id="chk">Check Wallet</button>
     <div class="auth">
       <select id="provider" aria-label="Choose sign-in provider">
         <option value="google">Google</option>
@@ -172,11 +183,6 @@
 
       <div class="buttons">
         <button id="create">Create Order</button>
-        <button id="add5">+ $5 via Square</button>
-      </div>
-      <div class="buttons">
-        <button id="add5c">+ $5 via Crypto (Coinbase)</button>
-        <button id="addCustom">Add Custom Amount</button>
       </div>
       <p class="help" id="minmax"></p>
       <p id="msg" class="muted"></p>
@@ -458,12 +464,6 @@ function findServiceFromQuery(q){
 }
 
 // hook up UI
-$('chk').onclick = async ()=>{
-  const uid = ($('uid').value || '').trim();
-  const email = ($('email').value || '').trim();
-  if (uid && email) saveUser(uid, email);
-  await refreshBalance();
-};
 $('svc').addEventListener('change', updateFromSelection);
 $('qty').addEventListener('input', estimate);
 $('find').addEventListener('input', applyFilters);
@@ -503,31 +503,6 @@ $('create').onclick = async () => {
   }
 };
 
-async function addFunds(method, cents){
-  {
-    const { uid, email } = currentUser();
-    if (!uid || !email){ $('msg').textContent = '❌ Sign in (or enter User ID + Email) first'; $('msg').className = 'err'; return; }
-  }
-  const path = method==='coinbase' ? '/api/deposits/create-coinbase' : '/api/deposits/create-square';
-  const r = await api(`${BASE}${path}`, { method:'POST', body: JSON.stringify({ amount_cents: cents }) });
-  const url = r.json?.url;
-  if (url) {
-    $('msg').innerHTML = `Link created: <a href="${url}" target="_blank" rel="noopener">${url}</a>`;
-  } else {
-    $('msg').textContent = r.json?.error || 'Could not create link';
-    $('msg').className = 'err';
-  }
-}
-
-$('add5').onclick = () => addFunds('square',500);
-$('add5c').onclick = () => addFunds('coinbase',500);
-$('addCustom').onclick = () => {
-  const v = prompt('Add funds (USD):', '10');
-  const dollars = Math.max(0, Number(v||0));
-  if (!dollars) return;
-  // default to Square; change to coinbase if preferred
-  addFunds('square', Math.round(dollars*100));
-};
 
 // init
 (async function init(){
