@@ -60,22 +60,23 @@
       pointer-events:none;
     }
     /* Gradient outline on hover */
-    .card:hover{
-      border-color:var(--plat, var(--brand));
-      box-shadow:0 0 0 1px var(--plat, var(--brand)) inset, 0 10px 30px rgba(0,0,0,.25);
-    }
-    .card:hover::after{
-      content:"";
-      position:absolute;
-      inset:-1px;
-      border-radius:inherit;
-      padding:1px;
-      background: var(--plat-gradient);
-      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-              mask-composite: exclude;
-      pointer-events:none;
-    }
+    /* Gradient outline on hover (no solid color border) */
+.card:hover{
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}
+.card:hover::after{
+  content:"";
+  position:absolute;
+  inset:-1px;
+  border-radius:inherit;
+  padding:1px;
+  background: var(--plat-gradient, linear-gradient(90deg, var(--plat, var(--brand)), transparent));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events:none;
+}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .muted{color:var(--muted)}
     .chip{background:var(--chip);border:1px solid var(--line);padding:3px 8px;border-radius:999px}
@@ -115,11 +116,29 @@
     .card.cat{ min-height:88px; }
 
 /* Hover accents using the platform color stored in --plat */
+/* Hover accents using the platform color stored in --plat */
 .card:hover{
-  border-color:var(--plat, var(--brand));
-  box-shadow:0 0 0 1px var(--plat, var(--brand)) inset, 0 10px 30px rgba(0,0,0,.25)
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
 }
-.card.cat:hover{ transform:translateY(-1px); }
+
+/* Subtle cloudy/glowy hover for category tiles */
+.card.cat:hover{
+  transform:translateY(-1px);
+  background:
+    radial-gradient(120% 80% at 50% -20%, rgba(255,255,255,.06), rgba(255,255,255,0) 60%),
+    var(--card);
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.25),
+    0 0 56px 14px rgba(138,166,255,.18);
+}
+@supports (color: color-mix(in oklab, red, blue)){
+  .card.cat:hover{
+    box-shadow:
+      0 10px 30px rgba(0,0,0,.25),
+      0 0 56px 14px color-mix(in oklab, var(--plat, #8aa6ff) 28%, transparent);
+  }
+}
     .section .head:hover{
       background: var(--plat-gradient, linear-gradient(90deg, var(--plat, var(--line)), transparent));
     }
@@ -234,12 +253,14 @@ details[open] summary{opacity:.9}
         const sb = window.supabase
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
               auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: true,
-                // separate storage key so other projects on the same domain don't collide
-                storageKey: 'ds_supabase_auth'
-              }
+  persistSession: true,
+  autoRefreshToken: true,
+  detectSessionInUrl: true,
+  flowType: 'pkce',
+  storage: window.localStorage,
+  // separate storage key so other projects on the same domain don't collide
+  storageKey: 'ds_supabase_auth'
+}
             })
           : null;
         // Track whether the user is currently authenticated (quick UI checks)
@@ -404,8 +425,15 @@ details[open] summary{opacity:.9}
           elLogin.onclick = (ev) => { ev.preventDefault(); signIn(); };
         }
         if(elLogout) elLogout.onclick = signOut;
-        if(sb) sb.auth.onAuthStateChange(()=>refreshAuthUI());
-        refreshAuthUI();
+        if (sb) {
+  sb.auth.onAuthStateChange((_evt, session) => {
+    isAuthed = !!session;
+    if (session?.user) renderUserInfo(session.user); else renderUserInfo(null);
+    refreshAuthUI();
+  });
+}
+// Ensure UI syncs after Supabase rehydrates from storage
+window.addEventListener('load', () => { setTimeout(refreshAuthUI, 50); });
         // hide and disable the platform/source selector per requirements
         if (elCat){ elCat.style.display = 'none'; elCat.onchange = null; }
         // keep only one <details> open on the whole page
@@ -499,9 +527,9 @@ details[open] summary{opacity:.9}
           'Tumblr':'#374459',
           'WhatsApp':'#25D366',
           'WebTraffic':'#98F5F9',
-          'Distribution':'#853FA0',
+          'Distribution':'#107d5e',
           'Kick':'#1AD451',
-          'VPN':'#D4A21A',
+          'VPN':'#05376b',
           'Other':'#59a0ff',
           'Google Business Reviews':'#FFEC6D',
           'Clubhouse':'#FFFC00',
