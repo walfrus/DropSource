@@ -246,7 +246,7 @@ details[open] summary{opacity:.9}
               persistSession: true,
               autoRefreshToken: true,
               flowType: 'pkce',
-              detectSessionInUrl: true
+              detectSessionInUrl: false
             }
           });
         } else {
@@ -259,15 +259,14 @@ details[open] summary{opacity:.9}
         async function handleOAuthRedirect(){
           if(!sb) return;
           try{
-            const hasCodeOrToken =
-              /[?&](code|access_token)=/.test(location.search) ||
-              /[?#&](code|access_token)=/.test(location.hash);
-            if(!hasCodeOrToken) return;
+            const hasCode = /[?&]code=/.test(location.search);
+            if(!hasCode) return;
             const { data, error } = await sb.auth.exchangeCodeForSession(window.location.href);
             if (error) {
               showFatal(error);
               return;
             }
+            await refreshAuthUI();
             // Strip OAuth params from URL to avoid repeated exchanges on reload
             try { history.replaceState({}, document.title, location.pathname); } catch(_){}
           }catch(err){
@@ -362,7 +361,7 @@ details[open] summary{opacity:.9}
             const { data, error } = await sb.auth.signInWithOAuth({
               provider: 'google',
               options: {
-                redirectTo: window.location.origin, // exact origin must be in Supabase Auth redirect URLs
+                redirectTo: window.location.origin + location.pathname,
                 queryParams: { prompt: 'select_account' }
               }
             });
