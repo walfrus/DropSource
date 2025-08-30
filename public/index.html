@@ -234,6 +234,8 @@ details[open] summary{opacity:.9}
         const sb = window.supabase
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
           : null;
+        // Track whether the user is currently authenticated (quick UI checks)
+        let isAuthed = false;
 
         const elLogin = document.getElementById('loginBtn');
         const elLogout = document.getElementById('logoutBtn');
@@ -277,7 +279,7 @@ details[open] summary{opacity:.9}
             return;
           }
           const { data:{ session } } = await sb.auth.getSession();
-          const isAuthed = !!session;
+          isAuthed = !!session;
           if (elLogin)  elLogin.style.display = isAuthed ? 'none' : '';
           if (elLogout) elLogout.style.display = isAuthed ? '' : 'none';
           if (elDeposit) elDeposit.style.display = isAuthed ? '' : 'none';
@@ -318,6 +320,7 @@ details[open] summary{opacity:.9}
         async function signOut(){
           if(!sb) return;
           await sb.auth.signOut();
+          isAuthed = false;
           await refreshAuthUI();
         }
 
@@ -325,6 +328,7 @@ details[open] summary{opacity:.9}
           const m = document.getElementById('signinModal');
           if(!m){ signIn(); return; }
           m.style.display = 'flex';
+          m.focus && m.focus();
           const cancel = m.querySelector('#siCancel');
           const go = m.querySelector('#siGo');
           const close = ()=>{ m.style.display = 'none'; };
@@ -939,6 +943,7 @@ details[open] summary{opacity:.9}
                 // Chip row
                 const chipsRow = document.createElement('div');
                 chipsRow.className = 'row';
+                chipsRow.style.marginBottom = '6px';
 
                 const chipMin = document.createElement('span');
                 chipMin.className = 'chip s gray';
@@ -968,6 +973,7 @@ details[open] summary{opacity:.9}
                 priceRow.className = 'row';
                 priceRow.style.justifyContent = 'space-between';
                 priceRow.style.alignItems = 'center';
+                priceRow.style.marginTop = '6px';
 
                 const priceDiv = document.createElement('div');
                 priceDiv.className = 'price';
@@ -975,6 +981,8 @@ details[open] summary{opacity:.9}
 
                 const btnRow = document.createElement('div');
                 btnRow.className = 'row';
+                btnRow.style.flexWrap = 'wrap';
+                btnRow.style.gap = '6px';
 
                 const orderBtn = document.createElement('button');
                 orderBtn.className = 'btn';
@@ -1000,11 +1008,13 @@ details[open] summary{opacity:.9}
                 // Compose card
                 card.replaceChildren(h3, chipsRow, priceRow);
 
-                card.querySelector('button.btn').onclick = ()=>{
+                // Attach handler directly to the created button and gate on auth.
+                orderBtn.onclick = ()=>{
+                  if (!isAuthed) { showSigninModal(); return; }
                   goToPurchase({
                     id: String(cheapest.id || ''),
                     category: plat,
-                    service: cheapest.name,         // use the concrete variant name
+                    service: cheapest.name,
                     title: cheapest.name,
                     rate: cheapest.price_per_1k,
                     min: cheapest.min,
@@ -1062,6 +1072,8 @@ details[open] summary{opacity:.9}
                   // right side: price + order button
                   const right = document.createElement('div');
                   right.className = 'row';
+                  right.style.flexWrap = 'wrap';
+                  right.style.gap = '6px';
 
                   const vPrice = document.createElement('div');
                   vPrice.className = 'price';
@@ -1084,11 +1096,12 @@ details[open] summary{opacity:.9}
                   right.append(vPrice, vBtn);
 
                   row.replaceChildren(left, right);
-                  row.querySelector('button.btn').onclick = ()=>{
+                  vBtn.onclick = ()=>{
+                    if (!isAuthed) { showSigninModal(); return; }
                     goToPurchase({
                       id: String(svc.id || ''),
                       category: plat,
-                      service: svc.name,             // exact variant picked
+                      service: svc.name,
                       title: svc.name,
                       rate: svc.price_per_1k,
                       min: svc.min,
