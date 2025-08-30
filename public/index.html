@@ -45,6 +45,34 @@
     .chip.gray{background:#121826;border-color:#1b2434}
     .chip.amber{background:#2a2112;border-color:#5a3d12}
 
+    /* Header balance pill + gold button */
+    .balance-pill{
+      display:flex;align-items:center;gap:8px;
+      padding:6px 10px;border-radius:999px;
+      background:rgba(255,215,0,.08);
+      border:1px solid rgba(255,215,0,.35);
+      color:#ffd86b;font-weight:800;
+      box-shadow:0 4px 18px rgba(255,215,0,.08) inset, 0 2px 8px rgba(0,0,0,.2);
+    }
+    .balance-pill .sym{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:18px;height:18px;border-radius:999px;
+      background:linear-gradient(180deg,#ffd700,#ffb400);color:#111;
+      font-weight:900; font-size:12px;
+    }
+    .btn.gold{
+      background:linear-gradient(180deg,#ffe07d,#ffc933);
+      color:#1b1400;border-color:#815b00;font-weight:800;
+    }
+    .btn.gold:hover{ filter:brightness(1.05); }
+
+    /* Category grid compaction (fill holes from different card heights) */
+    .grid.catgrid{ grid-auto-flow:dense; }
+
+    /* Tidy category cards */
+    .card.cat h3{ display:flex;align-items:center;justify-content:space-between; }
+    .card.cat{ min-height:88px; }
+
 /* Hover accents using the platform color stored in --plat */
 .card:hover{
   border-color:var(--plat, var(--brand));
@@ -87,6 +115,11 @@ details[open] summary{opacity:.9}
       <div class="brand">DropSource</div>
       <div class="muted">Boosts marketplace</div>
       <div id="authbar" class="row" style="margin-left:auto;gap:8px">
+        <div id="balancePill" class="balance-pill" style="display:none">
+          <span class="sym">$</span>
+          <span id="balanceAmt">$0.00</span>
+        </div>
+        <button id="depositBtn" class="btn gold" style="display:none">Deposit</button>
         <button id="loginBtn" class="btn">Sign in</button>
         <button id="logoutBtn" class="btn" style="display:none">Sign out</button>
       </div>
@@ -140,12 +173,25 @@ details[open] summary{opacity:.9}
 
         const elLogin = document.getElementById('loginBtn');
         const elLogout = document.getElementById('logoutBtn');
+        const elDeposit = document.getElementById('depositBtn');
+        const elBalWrap = document.getElementById('balancePill');
+        const elBalAmt  = document.getElementById('balanceAmt');
 
         async function refreshAuthUI(){
-          if(!sb || !elLogin || !elLogout){ return; }
+          if(!sb){ // no Supabase configured; hide auth-dependent UI
+            if (elDeposit) elDeposit.style.display = 'none';
+            if (elBalWrap) elBalWrap.style.display = 'none';
+            if (elLogin)  elLogin.style.display = '';
+            if (elLogout) elLogout.style.display = 'none';
+            return;
+          }
           const { data:{ session } } = await sb.auth.getSession();
-          elLogin.style.display = session ? 'none' : '';
-          elLogout.style.display = session ? '' : 'none';
+          const isAuthed = !!session;
+          if (elLogin)  elLogin.style.display = isAuthed ? 'none' : '';
+          if (elLogout) elLogout.style.display = isAuthed ? '' : 'none';
+          if (elDeposit) elDeposit.style.display = isAuthed ? '' : 'none';
+          if (elBalWrap) elBalWrap.style.display = isAuthed ? 'flex' : 'none';
+          if (isAuthed) { try{ await refreshBalance(); }catch(_){} }
         }
         async function signIn(){
           if(!sb) return;
@@ -156,6 +202,34 @@ details[open] summary{opacity:.9}
           if(!sb) return;
           await sb.auth.signOut();
           await refreshAuthUI();
+        }
+
+        async function refreshBalance(){
+          if(!sb || !elBalAmt) return;
+          const { data:{ user } } = await sb.auth.getUser();
+          const email = user?.email || '';
+          let balance = 0;
+          try{
+            const res = await fetch(`/api/wallet?email=${encodeURIComponent(email)}`, { cache:'no-store' });
+            if (res.ok) {
+              const j = await res.json();
+              if (j && typeof j === 'object') {
+                if (j.balance_cents != null) balance = Number(j.balance_cents)/100;
+                else if (j.cents != null) balance = Number(j.cents)/100;
+                else if (j.balance_usd != null) balance = Number(j.balance_usd);
+                else if (j.balance != null) balance = Number(j.balance);
+                else if (j.usd != null) balance = Number(j.usd);
+              }
+            }
+          }catch(_){}
+          if (!Number.isFinite(balance)) balance = 0;
+          elBalAmt.textContent = `$${balance.toFixed(2)}`;
+        }
+        if (elDeposit) {
+          elDeposit.onclick = async () => {
+            const ok = await ensureAuth();
+            if (ok !== false) location.href = '/balance.html';
+          };
         }
         async function ensureAuth(){
           if(!sb) return true; // allow while not configured
@@ -522,7 +596,7 @@ details[open] summary{opacity:.9}
 
             // categories header
             const catsGrid = document.createElement('div');
-            catsGrid.className='grid';
+            catsGrid.className='grid catgrid';
             for (const [p, m] of filteredByPlat) {
               const catCard = document.createElement('div');
               catCard.className = 'card cat';
