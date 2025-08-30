@@ -266,7 +266,9 @@ details[open] summary{opacity:.9}
               showFatal(error);
               return;
             }
-            await refreshAuthUI();
+            // ensure session is hydrated before we render
+            try { await sb.auth.getSession(); } catch(_){}
+            try { await refreshAuthUI(); } catch(_){}
             // Strip OAuth params from URL to avoid repeated exchanges on reload
             try { history.replaceState({}, document.title, location.pathname); } catch(_){}
           }catch(err){
@@ -275,6 +277,12 @@ details[open] summary{opacity:.9}
         }
         // Kick off redirect handler ASAP; then refresh UI once session is set
         handleOAuthRedirect().then(()=>{ try{ refreshAuthUI(); }catch(_){} });
+        // Keep UI in sync if Supabase updates localStorage asynchronously
+        window.addEventListener('storage', (e) => {
+          if (e.key && e.key.startsWith('sb-') && e.key.endsWith('-auth-token')) {
+            refreshAuthUI();
+          }
+        });
         // Track whether the user is currently authenticated (quick UI checks)
         let isAuthed = false;
 
@@ -361,7 +369,7 @@ details[open] summary{opacity:.9}
             const { data, error } = await sb.auth.signInWithOAuth({
               provider: 'google',
               options: {
-                redirectTo: window.location.origin + location.pathname,
+                redirectTo: `${window.location.origin}${window.location.pathname}`, // must be whitelisted in Supabase Auth redirect URLs
                 queryParams: { prompt: 'select_account' }
               }
             });
