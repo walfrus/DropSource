@@ -79,12 +79,17 @@ details[open] summary{opacity:.9}
     #errorOverlay{position:fixed;inset:0;background:rgba(8,12,18,.92);color:#fff;display:none;align-items:center;justify-content:center;padding:24px;z-index:99}
     #errorOverlay pre{max-width:1000px;white-space:pre-wrap;word-break:break-word;background:#111a2a;border:1px solid #2b3b55;padding:16px;border-radius:12px}
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <header>
     <div class="row">
       <div class="brand">DropSource</div>
       <div class="muted">Boosts marketplace</div>
+      <div id="authbar" class="row" style="margin-left:auto;gap:8px">
+        <button id="loginBtn" class="btn">Sign in</button>
+        <button id="logoutBtn" class="btn" style="display:none">Sign out</button>
+      </div>
     </div>
   </header>
 
@@ -125,6 +130,44 @@ details[open] summary{opacity:.9}
         document.getElementById('expandAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.add('open'));
         document.getElementById('collapseAll').onclick = ()=>document.querySelectorAll('.section').forEach(s=>s.classList.remove('open'));
         elQ.oninput = load;
+
+        // --- Supabase Auth (Google + Email/Magic) -----------------------------------
+        const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
+        const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
+        const sb = (window.supabase && SUPABASE_URL !== 'https://oyibixfoiwizpphuimkl.supabase.co')
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          : null;
+
+        const elLogin = document.getElementById('loginBtn');
+        const elLogout = document.getElementById('logoutBtn');
+
+        async function refreshAuthUI(){
+          if(!sb || !elLogin || !elLogout){ return; }
+          const { data:{ session } } = await sb.auth.getSession();
+          elLogin.style.display = session ? 'none' : '';
+          elLogout.style.display = session ? '' : 'none';
+        }
+        async function signIn(){
+          if(!sb) return;
+          // Use Google OAuth; Supabase will redirect back to the current page.
+          await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.href } });
+        }
+        async function signOut(){
+          if(!sb) return;
+          await sb.auth.signOut();
+          await refreshAuthUI();
+        }
+        async function ensureAuth(){
+          if(!sb) return true; // allow while not configured
+          const { data:{ session } } = await sb.auth.getSession();
+          if(session) return true;
+          await signIn();
+          return false;
+        }
+        if(elLogin) elLogin.onclick = signIn;
+        if(elLogout) elLogout.onclick = signOut;
+        if(sb) sb.auth.onAuthStateChange(()=>refreshAuthUI());
+        refreshAuthUI();
         // hide and disable the platform/source selector per requirements
         if (elCat){ elCat.style.display = 'none'; elCat.onchange = null; }
         // keep only one <details> open on the whole page
@@ -661,7 +704,7 @@ details[open] summary{opacity:.9}
                     id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
                     rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
                   });
-                  location.href = `/purchase.html?${qs.toString()}`;
+                  ensureAuth().then((ok)=>{ if(ok!==false) location.href = `/purchase.html?${qs.toString()}`; });
                 };
 
                 const det = document.createElement('details');
@@ -740,7 +783,7 @@ details[open] summary{opacity:.9}
                       id: d.id||'', name: d.name||'', title: d.title||'', plat: d.plat||'', type: d.type||'',
                       rate: d.rate||'', min: d.min||'', max: d.max||'', slug: d.slug||'', link: ''
                     });
-                    location.href = `/purchase.html?${qs.toString()}`;
+                    ensureAuth().then((ok)=>{ if(ok!==false) location.href = `/purchase.html?${qs.toString()}`; });
                   };
                   vWrap.appendChild(row);
                 }

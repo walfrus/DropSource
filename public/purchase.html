@@ -5,22 +5,91 @@
   <title>Buy Services</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:680px;margin:24px auto;padding:0 16px}
-    .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
-    label{display:block;margin:8px 0 4px}
-    input,select,button{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px}
-    button{cursor:pointer}
+    :root{
+      --bg:#0b1220;           /* page background */
+      --panel:#0f1726;        /* card background */
+      --panel-2:#0c1422;      /* inputs background */
+      --border:#1d2a3c;       /* subtle border */
+      --border-2:#2a3951;     /* hover/focus border */
+      --text:#d9e2f1;         /* base text */
+      --muted:#8aa0bd;        /* muted text */
+      --ok:#39d98a;           /* success */
+      --err:#ff6b6b;          /* danger */
+      --accent:#4b6bfb;       /* blue accent */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 24px 16px 48px;
+    }
+    h1{margin: 0 0 16px; font-size: 22px; font-weight: 700; letter-spacing:.2px}
+
+    /* container width similar to index page */
+    .wrap{max-width:980px;margin:0 auto}
+
+    .card{
+      position: relative;
+      background: radial-gradient(120% 120% at 0% 0%, rgba(255,255,255,0.04), transparent 50%) , var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:16px;
+      margin:16px 0;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02);
+    }
+    /* thin glowing top bar like category cards */
+    .card::after{
+      content:""; position:absolute; left:-1px; right:-1px; top:-1px; height:2px; border-radius:14px; filter:blur(.15px);
+      background: linear-gradient(90deg,#4b6bfb,#6a5af9,#d66efd,#22d3ee);
+    }
+
+    label{display:block;margin:8px 0 6px;font-size:12px;color:var(--muted)}
+
+    input,select,button{
+      width:100%;
+      padding:10px 12px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background: var(--panel-2);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    input::placeholder{color:#6f85a3}
+    select{appearance:none;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="%238aa0bd"><path d="M5.5 7.5l4.5 5 4.5-5" stroke="%238aa0bd" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>');background-repeat:no-repeat;background-position:right 8px center;padding-right:34px}
+    input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(75,107,251,.22)}
+
+    button{cursor:pointer;background:#0e1626}
+    button:hover{border-color:var(--border-2);background:#0f1a2c}
+
     .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .muted{color:#666}
-    .ok{color:#0a7a0a}
-    .err{color:#b00020}
-  .help{font-size:12px;color:#777;margin-top:4px}
-  input[disabled]{background:#f6f6f6}
-  .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-  .small{font-size:12px}
-  .hidden{display:none}
-  .buttons button#logout{background:#111;color:#fff}
-  .buttons button#login{background:#fff;border:1px solid #ccc}
+
+    .muted{color:var(--muted)}
+    .ok{color:var(--ok)}
+    .err{color:var(--err)}
+
+    .help{font-size:12px;color:var(--muted);margin-top:4px}
+    input[disabled]{background:#0b1524;color:#91a7c0}
+
+    .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    .small{font-size:12px}
+    .hidden{display:none}
+
+    /* auth row + provider select */
+    .auth{display:grid;grid-template-columns:1fr auto auto;gap:12px;margin-top:12px}
+    #provider{padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)}
+
+    /* primary/secondary buttons */
+    #logout{background:#111827;border-color:#2a3951}
+    #login{background:transparent}
+    #create{background:linear-gradient(180deg,#1d2b45,#16233a);border-color:#3b82f6}
+    #add5,#add5c,#addCustom{background:#0e1626}
+
+    @media (max-width:720px){ .wrap{max-width:640px} }
+    @media (max-width:520px){ .row{grid-template-columns:1fr} .auth{grid-template-columns:1fr 1fr; } #provider{grid-column:1/-1} }
   </style>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
@@ -32,7 +101,8 @@
 </script>
 </head>
 <body>
-  <h1>Purchase</h1>
+  <div class="wrap">
+  <h1>Buy Services</h1>
 
   <div class="card">
     <div class="row">
@@ -46,8 +116,15 @@
       </div>
     </div>
     <button id="chk">Check Wallet</button>
-    <div class="buttons">
-      <button id="login">Sign in with Google</button>
+    <div class="auth">
+      <select id="provider" aria-label="Choose sign-in provider">
+        <option value="google">Google</option>
+        <option value="github">GitHub</option>
+        <option value="apple">Apple</option>
+        <option value="discord">Discord</option>
+        <option value="email">Email link</option>
+      </select>
+      <button id="login">Sign in</button>
       <button id="logout">Sign out</button>
     </div>
     <p class="help small">Tip: we’ll remember your user id + email on this device only. (Full login coming soon.)</p>
@@ -111,9 +188,17 @@ const $ = (id)=>document.getElementById(id);
 
 // persist pseudo-login locally (temporary until real auth)
 const KEY='ds_user';
+const KEY_PROV='ds_provider';
+function loadProvider(){ return localStorage.getItem(KEY_PROV) || 'google'; }
+function saveProvider(p){ localStorage.setItem(KEY_PROV, p); }
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}'); }catch{ return {}; } }
 function saveUser(uid,email){ localStorage.setItem(KEY, JSON.stringify({uid,email})); }
-function applyUser(){ const u=loadUser(); if(u.uid) $('uid').value=u.uid; if(u.email) $('email').value=u.email; }
+function applyUser(){
+  const u=loadUser();
+  if(u.uid) $('uid').value=u.uid;
+  if(u.email) $('email').value=u.email;
+  if ($('provider')) $('provider').value = loadProvider();
+}
 
 // --- helpers ---
 function cents(n){ return `$${(n/100).toFixed(2)}`; }
@@ -168,6 +253,7 @@ function setAuthUI(loggedIn){
   if ($('logout')) $('logout').classList.toggle('hidden', !has);
   if ($('uid')) $('uid').disabled = has;
   if ($('email')) $('email').disabled = has;
+  if ($('provider')) $('provider').disabled = has;
 }
 async function bootstrapAuth(){
   if (!supa) { setAuthUI(false); return; }
@@ -194,10 +280,26 @@ async function bootstrapAuth(){
       await refreshBalance();
     }
   });
+  if ($('provider')){
+    $('provider').onchange = ()=> saveProvider($('provider').value);
+  }
   if ($('login')) $('login').onclick = async ()=>{
     if (!supa){ alert('Auth not configured'); return; }
+    const provider = $('provider') ? $('provider').value : 'google';
+    saveProvider(provider);
+    if (provider === 'email'){
+      const email = prompt('Enter your email for a magic sign-in link:');
+      if (!email) return;
+      const { error } = await supa.auth.signInWithOtp({
+        email,
+        options:{ emailRedirectTo: location.href }
+      });
+      if (error) alert(error.message || 'Email sign-in failed');
+      else alert('Check your email for the sign-in link.');
+      return;
+    }
     await supa.auth.signInWithOAuth({
-      provider:'google',
+      provider,
       options:{ redirectTo: location.href }
     });
   };
@@ -430,6 +532,7 @@ $('addCustom').onclick = () => {
 // init
 (async function init(){
   applyUser();
+  if ($('provider')) $('provider').value = loadProvider();
   await bootstrapAuth();
   await refreshBalance();
   await loadCSV();
@@ -453,5 +556,6 @@ $('addCustom').onclick = () => {
   estimate();
 })();
 </script>
+</div>
 </body>
 </html>
