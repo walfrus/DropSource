@@ -74,7 +74,13 @@ export default async function handler(req: any, res: any) {
       name: 'DropSource Credits',
       pricing_type: 'fixed_price',
       local_price: { amount: (cents / 100).toFixed(2), currency: 'USD' },
-      metadata: { userId: user.id, depositId: dep.id },
+      metadata: {
+        userId: user.id,
+        depositId: dep.id,
+        // snake_case duplicates so webhook fallback matchers can use these
+        user_id: user.id,
+        deposit_id: dep.id,
+      },
       redirect_url: redirect,
       cancel_url: cancel,
     };
@@ -122,7 +128,13 @@ export default async function handler(req: any, res: any) {
         source: 'coinbase',
         event: 'create_ok',
         http_status: 200,
-        payload: { depositId: dep.id, provider_id: json?.data?.id, hosted_url: json?.data?.hosted_url, amount_cents: cents },
+        payload: {
+          depositId: dep.id,
+          provider_id: json?.data?.id,
+          provider_code: json?.data?.code,
+          hosted_url: json?.data?.hosted_url,
+          amount_cents: cents
+        },
       });
     } catch {}
 

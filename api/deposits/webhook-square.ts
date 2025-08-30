@@ -36,6 +36,27 @@ async function logWebhook(sb: any, event: string, http_status: number, payload: 
   try { await sb.from('webhook_logs').insert({ source: 'square', event, http_status, payload }); } catch {}
 }
 
+async function findDepositByAnyKey(sb: any, keys: string[]) {
+  for (const key of keys) {
+    // try provider_id
+    try {
+      const r1 = await sb.from('deposits').select('*').eq('provider_id', key).single();
+      if (r1?.data) return r1.data;
+    } catch {}
+    // try provider_order_id
+    try {
+      const r2 = await sb.from('deposits').select('*').eq('provider_order_id', key).single();
+      if (r2?.data) return r2.data;
+    } catch {}
+    // try provider_payment_id
+    try {
+      const r3 = await sb.from('deposits').select('*').eq('provider_payment_id', key).single();
+      if (r3?.data) return r3.data;
+    } catch {}
+  }
+  return null;
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return text(res, 200, 'ok');
 
@@ -96,14 +117,11 @@ export default async function handler(req: any, res: any) {
       return text(res, 200, 'ok');
     }
 
-    // 3) Find matching deposit by provider_id (try linkId, orderId, paymentId)
+    // 3) Find matching deposit by any known provider column (linkId, orderId, paymentId)
     const paymentId = String(payment?.id || '');
     const candidates = Array.from(new Set([providerKey, linkId, orderId, paymentId].filter(Boolean)));
-    let dep: any = null;
-    for (const key of candidates) {
-      const { data } = await sb.from('deposits').select('*').eq('provider_id', key).single();
-      if (data) { dep = data; break; }
-    }
+    let dep: any = await findDepositByAnyKey(sb, candidates);
+
     if (!dep) {
       await logWebhook(sb, 'deposit_not_found', 200, { candidates, type, status });
       return text(res, 200, 'ok');
@@ -116,13 +134,29 @@ export default async function handler(req: any, res: any) {
       return text(res, 200, 'ok');
     }
 
-    // 5) Mark deposit confirmed (use a schema-safe value)
-    const successStatus = 'paid';
-    try { await sb.from('deposits').update({ status: successStatus }).eq('id', dep.id); } catch {}
+    const successStatus = String(process.env.DEPOSIT_SUCCESS_STATUS || 'paid');
+
+    // Idempotency guard: if already marked success, do not credit again
+    if (String(dep.status || '').toLowerCase() === successStatus.toLowerCase()) {
+      await logWebhook(sb, 'already_paid', 200, { dep_id: dep.id, providerKey });
+      return text(res, 200, 'ok');
+    }
+
+    // 5) Mark deposit confirmed and enrich provider IDs when columns exist
+    const depUpdate: any = { status: successStatus };
+    if (paymentId) depUpdate.provider_payment_id = paymentId;
+    if (orderId)   depUpdate.provider_order_id   = orderId;
+
+    try { await sb.from('deposits').update(depUpdate).eq('id', dep.id); } catch { 
+      // Fallback if some columns don't exist
+      try { await sb.from('deposits').update({ status: successStatus }).eq('id', dep.id); } catch {}
+    }
 
     // 6) Credit wallet
     const user_id = dep.user_id;
-    const cents = Number(dep.amount_cents || amount || 0);
+    const cents = Number.isFinite(Number(dep.amount_cents)) && Number(dep.amount_cents) > 0
+      ? Number(dep.amount_cents)
+      : (Number(amount) || 0);
     if (user_id && cents > 0) {
       // ensure user exists
       await sb.from('users').upsert({ id: user_id, email: null }).select('id').single();
@@ -134,6 +168,8 @@ export default async function handler(req: any, res: any) {
       const { data: w3 } = await sb.from('wallets').select('balance_cents').eq('user_id', user_id).single();
       const next = Number(w3?.balance_cents || 0) + cents;
       await sb.from('wallets').update({ balance_cents: next }).eq('user_id', user_id);
+
+      await logWebhook(sb, 'wallet_credited', 200, { user_id, added_cents: cents });
     }
 
     await logWebhook(sb, 'paid', 200, { dep_id: dep.id, providerKey, cents });

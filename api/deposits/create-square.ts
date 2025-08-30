@@ -148,9 +148,22 @@ export default async function handler(req: any, res: any) {
       } catch {}
     }
 
-    const updDep = await sb.from('deposits').update({
-      provider_id: paymentLink?.id || null
+    // Save identifiers back to the deposit row.
+    // Prefer to also store the Square order_id so our webhook can reconcile
+    // on `payment.updated` events (which provide order_id but not link id).
+    let updDep = await sb.from('deposits').update({
+      provider_id: paymentLink?.id || null,
+      // If your schema includes this column, it will be populated; if not,
+      // the fallback below updates just provider_id.
+      provider_order_id: orderId || null
     }).eq('id', dep.id);
+
+    // Fallback in case `provider_order_id` column is not present.
+    if ((updDep as any)?.error) {
+      updDep = await sb.from('deposits').update({
+        provider_id: paymentLink?.id || null
+      }).eq('id', dep.id);
+    }
 
     if ((updDep as any)?.error) {
       try {

@@ -2,7 +2,10 @@
 import { readRawBody, crypto } from '../../lib/smm.js';
 import { sb } from '../../lib/db.js';
 
-export const config = { runtime: 'nodejs' };
+export const config = {
+  runtime: 'nodejs',
+  api: { bodyParser: false },
+};
 
 type AnyObj = Record<string, any>;
 
@@ -58,6 +61,10 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    // optional metadata added when the charge was created
+    const metadata: AnyObj = (body?.event?.data?.metadata || {}) as AnyObj;
+    const metaDepositId = String(metadata.deposit_id || metadata.depositId || '') || '';
+
     const type = String(body?.event?.type || '');
     const data = body?.event?.data || {};
     const cbId = String(data?.id || '');
@@ -71,6 +78,13 @@ export default async function handler(req: any, res: any) {
     if (!dep && cbId && cbCode && cbCode !== cbId) {
       const alt = await sb.from('deposits').select('*').eq('provider_id', cbCode).single();
       dep = alt.data || null;
+    }
+    if (!dep && metaDepositId) {
+      const byMeta = await sb.from('deposits').select('*').eq('id', metaDepositId).single();
+      if (byMeta.data) {
+        dep = byMeta.data;
+        await safeLog({ source: 'coinbase', event: 'DEPOSIT_MATCHED_BY_METADATA', http_status: 200, payload: { deposit_id: dep.id } });
+      }
     }
     if (!dep) {
       await safeLog({ source: 'coinbase', event: 'DEPOSIT_NOT_FOUND', http_status: 200, payload: { providerId } });
