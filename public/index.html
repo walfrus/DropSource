@@ -241,6 +241,27 @@ details[open] summary{opacity:.9}
               }
             })
           : null;
+        // Explicitly handle OAuth redirect -> exchange code for session (robust across hosts)
+        async function handleOAuthRedirect(){
+          if(!sb) return;
+          try{
+            const hasCodeOrToken =
+              /[?&](code|access_token)=/.test(location.search) ||
+              /[?#&](code|access_token)=/.test(location.hash);
+            if(!hasCodeOrToken) return;
+            const { data, error } = await sb.auth.exchangeCodeForSession(window.location.href);
+            if (error) {
+              console.warn('exchangeCodeForSession error:', error);
+              return;
+            }
+            // Strip OAuth params from URL to avoid repeated exchanges on reload
+            try { history.replaceState({}, document.title, location.pathname); } catch(_){}
+          }catch(err){
+            console.warn('handleOAuthRedirect exception:', err);
+          }
+        }
+        // Kick off redirect handler ASAP; then refresh UI once session is set
+        handleOAuthRedirect().then(()=>{ try{ refreshAuthUI(); }catch(_){} });
         // Track whether the user is currently authenticated (quick UI checks)
         let isAuthed = false;
 
