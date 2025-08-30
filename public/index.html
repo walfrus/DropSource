@@ -232,7 +232,15 @@ details[open] summary{opacity:.9}
         const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
         const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
         const sb = window.supabase
-          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+              auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: true,
+                // separate storage key so other projects on the same domain don't collide
+                storageKey: 'ds_supabase_auth'
+              }
+            })
           : null;
         // Track whether the user is currently authenticated (quick UI checks)
         let isAuthed = false;
@@ -299,7 +307,7 @@ details[open] summary{opacity:.9}
             const { data, error } = await sb.auth.signInWithOAuth({
               provider: 'google',
               options: {
-                redirectTo: window.location.origin + '/', // send back to site root
+                redirectTo: window.location.origin + window.location.pathname,
                 queryParams: { prompt: 'select_account' }
               }
             });
