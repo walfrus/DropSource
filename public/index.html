@@ -149,6 +149,12 @@ details[open] summary{opacity:.9}
     #wrap .loading{max-width:1200px;margin:30px auto;padding:16px;border:1px dashed var(--line);border-radius:12px}
     #errorOverlay{position:fixed;inset:0;background:rgba(8,12,18,.92);color:#fff;display:none;align-items:center;justify-content:center;padding:24px;z-index:99}
     #errorOverlay pre{max-width:1000px;white-space:pre-wrap;word-break:break-word;background:#111a2a;border:1px solid #2b3b55;padding:16px;border-radius:12px}
+    /* Sign-in modal */
+    #signinModal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(7,10,16,.8);z-index:99}
+    #signinModal .box{background:#0f1520;border:1px solid var(--line);border-radius:14px;padding:18px;width:min(420px,calc(100% - 32px));box-shadow:0 20px 60px rgba(0,0,0,.5)}
+    #signinModal h4{margin:0 0 6px 0}
+    #signinModal p{margin:0 0 12px 0;color:var(--muted)}
+    #signinModal .row{justify-content:flex-end}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -184,6 +190,16 @@ details[open] summary{opacity:.9}
 
   <div id="wrap"><div class="loading">Loading services…</div></div>
   <div id="errorOverlay"><pre id="errorText"></pre></div>
+  <div id="signinModal">
+    <div class="box">
+      <h4>Sign in required</h4>
+      <p>You need to sign in to place an order.</p>
+      <div class="row">
+        <button id="siCancel" class="btn">Cancel</button>
+        <button id="siGo" class="btn gold">Sign in</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     // @ts-nocheck
@@ -305,6 +321,17 @@ details[open] summary{opacity:.9}
           await refreshAuthUI();
         }
 
+        function showSigninModal(){
+          const m = document.getElementById('signinModal');
+          if(!m){ signIn(); return; }
+          m.style.display = 'flex';
+          const cancel = m.querySelector('#siCancel');
+          const go = m.querySelector('#siGo');
+          const close = ()=>{ m.style.display = 'none'; };
+          if(cancel) cancel.onclick = close;
+          if(go)     go.onclick = ()=>{ close(); signIn(); };
+        }
+
         async function refreshBalance(){
           if(!sb || !elBalAmt) return;
           const { data:{ user } } = await sb.auth.getUser();
@@ -336,7 +363,7 @@ details[open] summary{opacity:.9}
           if(!sb) return true; // allow while not configured
           const { data:{ session } } = await sb.auth.getSession();
           if(session) return true;
-          await signIn();
+          showSigninModal();   // friendly prompt instead of silent no-op
           return false;
         }
         function redirectToPurchase(payload){
