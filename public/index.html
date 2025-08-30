@@ -273,9 +273,31 @@ details[open] summary{opacity:.9}
           if (isAuthed) { try{ await refreshBalance(); }catch(_){} }
         }
         async function signIn(){
-          if(!sb) return;
-          // Use Google OAuth; Supabase will redirect back to the current page.
-          await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.href } });
+          try{
+            if(!sb){
+              console.warn('Supabase client not available; cannot sign in.');
+              return;
+            }
+            const { data, error } = await sb.auth.signInWithOAuth({
+              provider: 'google',
+              options: {
+                redirectTo: window.location.origin + '/', // send back to site root
+                queryParams: { prompt: 'select_account' }
+              }
+            });
+            if (error){
+              console.error('OAuth error:', error);
+              alert('Unable to start Google sign-in: ' + (error.message || error));
+              return;
+            }
+            // Some browsers don’t auto-redirect; follow the URL explicitly.
+            if (data?.url){
+              window.location.assign(data.url);
+            }
+          }catch(err){
+            console.error('Sign-in exception:', err);
+            alert('Unable to start Google sign-in. See console for details.');
+          }
         }
         async function signOut(){
           if(!sb) return;
@@ -317,7 +339,9 @@ details[open] summary{opacity:.9}
           await signIn();
           return false;
         }
-        if(elLogin) elLogin.onclick = signIn;
+        if (elLogin) {
+          elLogin.onclick = (ev) => { ev.preventDefault(); signIn(); };
+        }
         if(elLogout) elLogout.onclick = signOut;
         if(sb) sb.auth.onAuthStateChange(()=>refreshAuthUI());
         refreshAuthUI();
