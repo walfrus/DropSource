@@ -134,7 +134,7 @@ details[open] summary{opacity:.9}
         // --- Supabase Auth (Google + Email/Magic) -----------------------------------
         const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
         const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
-        const sb = (window.supabase && SUPABASE_URL !== 'https://oyibixfoiwizpphuimkl.supabase.co')
+        const sb = window.supabase
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
           : null;
 
@@ -184,7 +184,7 @@ details[open] summary{opacity:.9}
           return String(s||'').toLowerCase().replace(/[^\p{L}\p{N}. ]+/gu,' ').trim().replace(/\s+/g,' ');
         }
 
-        const ALLOWED_PLAT_LABELS = new Map([
+        const RAW_ALLOWED_PLAT = [
           ['instagram','Instagram'],
           ['threads','Threads'],
           ['youtube','YouTube'],
@@ -229,7 +229,8 @@ details[open] summary{opacity:.9}
           ['whatsapp','WhatsApp'],
           ['kick','Kick'],
           ['vpn','VPN'],
-        ]);
+        ];
+        const ALLOWED_PLAT_LABELS = new Map(RAW_ALLOWED_PLAT.map(([k,v]) => [normKey(k), v]));
 
         const PLATFORM_COLORS = {
           'Instagram':'#E1306C',
