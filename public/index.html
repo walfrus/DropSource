@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Supply your Supabase project settings here (prod). For local dev you can still rely on window.SUPABASE_URL / window.SUPABASE_ANON_KEY -->
+  <meta name="supabase-url" content="">
+  <meta name="supabase-key" content="">
   <title>DropSource — Boosts</title>
   <style>
     :root{--bg:#0b0f16;--fg:#e6edf7;--muted:#9fb3c8;--chip:#1a2230;--brand:#8aa6ff;--card:#0f1520;--line:#1b2434;--btn:#1b2a45;--btn-fg:#e6edf7}
@@ -229,8 +232,13 @@ details[open] summary{opacity:.9}
         elQ.oninput = load;
 
         // --- Supabase Auth (Google + Email/Magic) -----------------------------------
-        const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
-        const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
+        // Prefer meta tags or window vars; avoid hard-coded fallbacks in production
+        const __envUrl = document.querySelector('meta[name="supabase-url"]')?.content || window.SUPABASE_URL || '';
+        const __envKey = document.querySelector('meta[name="supabase-key"]')?.content || window.SUPABASE_ANON_KEY || '';
+        const __isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+        // Optional local dev fallback (kept for localhost only)
+        const SUPABASE_URL = __envUrl || (__isLocal ? 'https://oyibixfoiwizpphuimkl.supabase.co' : '');
+        const SUPABASE_ANON_KEY = __envKey || (__isLocal ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg' : '');
         const sb = window.supabase
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
               auth: {
@@ -241,6 +249,9 @@ details[open] summary{opacity:.9}
               }
             })
           : null;
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+          console.warn('Supabase URL/key missing. Set <meta name="supabase-url"> and <meta name="supabase-key"> or window.SUPABASE_URL/window.SUPABASE_ANON_KEY.');
+        }
         // Explicitly handle OAuth redirect -> exchange code for session (robust across hosts)
         async function handleOAuthRedirect(){
           if(!sb) return;
@@ -251,7 +262,7 @@ details[open] summary{opacity:.9}
             if(!hasCodeOrToken) return;
             const { data, error } = await sb.auth.exchangeCodeForSession(window.location.href);
             if (error) {
-              console.warn('exchangeCodeForSession error:', error);
+              showFatal(error);
               return;
             }
             // Strip OAuth params from URL to avoid repeated exchanges on reload
@@ -348,7 +359,7 @@ details[open] summary{opacity:.9}
             const { data, error } = await sb.auth.signInWithOAuth({
               provider: 'google',
               options: {
-                redirectTo: window.location.origin + '/', // send back to site root
+                redirectTo: window.location.origin, // exact origin must be in Supabase Auth redirect URLs
                 queryParams: { prompt: 'select_account' }
               }
             });
