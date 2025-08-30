@@ -377,10 +377,6 @@ details[open] summary{opacity:.9}
         const ALLOWED_PLAT_LABELS = new Map(RAW_ALLOWED_PLAT.map(([k,v]) => [normKey(k), v]));
 
         const PLATFORM_COLORS = {
-        // Optional multi-color gradients per platform
-        const PLATFORM_GRADIENTS = {
-          'Google Business Reviews': 'linear-gradient(90deg,#EA4335,#FBBC05,#34A853,#4285F4)' // Google red, yellow, green, blue
-        };
           'Instagram':'#E1306C',
           'Telegram':'#2CA5E0',
           'Twitter':'#1DA1F2',
@@ -420,6 +416,24 @@ details[open] summary{opacity:.9}
           'IMDb':'#F2BE3B',
           'Tidal':'#161515',
           'DatPiff':'#5DE2E7',
+        };
+
+        // Optional multi‑color gradients per platform (used when available)
+        const PLATFORM_GRADIENTS = {
+          'Google Business Reviews':'linear-gradient(90deg,#EA4335,#FBBC05,#34A853,#4285F4)',
+          'Instagram':'linear-gradient(90deg,#F58529,#DD2A7B,#8134AF,#515BD4)',
+          'TikTok':'linear-gradient(90deg,#25F4EE,#000000,#FE2C55)',
+          'Spotify':'linear-gradient(90deg,#1DB954,#1ED760)',
+          'YouTube':'linear-gradient(90deg,#FF0000,#CC0000)',
+          'Rumble':'linear-gradient(90deg,#7DDA58,#5CBF40)',
+          'Distribution':'linear-gradient(90deg,#853FA0,#B06FF5)',
+          'WebTraffic':'linear-gradient(90deg,#98F5F9,#7AD9F0)',
+          'Kick':'linear-gradient(90deg,#1AD451,#0EAD2A)',
+          'VPN':'linear-gradient(90deg,#D4A21A,#F3C969)',
+          'IMDb':'linear-gradient(90deg,#F2BE3B,#E1A100)',
+          'Tidal':'linear-gradient(90deg,#161515,#2A2A2A)',
+          'DatPiff':'linear-gradient(90deg,#5DE2E7,#3CC3C9)',
+          'Clubhouse':'linear-gradient(90deg,#FFFC00,#FFF066)'
         };
 
         function detectPlatform(str=''){
