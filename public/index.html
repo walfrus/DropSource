@@ -407,7 +407,27 @@ details[open] summary{opacity:.9}
         if (elDeposit) {
           elDeposit.onclick = async () => {
             const ok = await ensureAuth();
-            if (ok !== false) location.href = '/balance.html';
+            if (ok === false) return;
+
+            // pull the authed user from Supabase
+            let uid = '', email = '';
+            try {
+              if (sb) {
+                const { data: { user } } = await sb.auth.getUser();
+                uid = user?.id || '';
+                email = user?.email || user?.user_metadata?.email || '';
+              }
+            } catch (_) {}
+
+            // mirror into localStorage so /balance.html can read it even without query params
+            try { localStorage.setItem('ds_user', JSON.stringify({ uid, email })); } catch (_) {}
+
+            // send to the balance / checkout page with context
+            const qs = new URLSearchParams();
+            if (uid) qs.set('uid', uid);
+            if (email) qs.set('email', email);
+            qs.set('start', 'checkout'); // optional hint for the page to show payment options
+            location.href = '/balance.html?' + qs.toString();
           };
         }
         async function ensureAuth(){

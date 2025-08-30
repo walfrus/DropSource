@@ -39,13 +39,23 @@
     }
 
     // ——— identity ———
-    const params = new URLSearchParams(location.search);
-    let uid   = params.get('uid')   || getCookie('uid')   || '';
-    let email = params.get('email') || getCookie('email') || '';
+    const KEY = 'ds_user';
+    function loadUser(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}'); }catch{ return {}; } }
 
-    // If provided via query, persist to cookies for future hits
-    if (params.get('uid'))   setCookie('uid', uid);
-    if (params.get('email')) setCookie('email', email);
+    const params = new URLSearchParams(location.search);
+    const local = loadUser();
+    let uid   = params.get('uid')   || getCookie('uid')   || local.uid   || '';
+    let email = params.get('email') || getCookie('email') || local.email || '';
+
+    // If provided via query, persist to cookies for future hits (and mirror into local storage)
+    if (params.get('uid')) {
+      setCookie('uid', uid);
+      localStorage.setItem(KEY, JSON.stringify({ ...(local||{}), uid, email: (local.email||email)||'' }));
+    }
+    if (params.get('email')) {
+      setCookie('email', email);
+      localStorage.setItem(KEY, JSON.stringify({ ...(local||{}), uid: (local.uid||uid)||'', email }));
+    }
 
     // Show who context (obfuscated email)
     const whoEl = document.getElementById('who');
@@ -69,7 +79,7 @@
     const balEl = document.getElementById('balance');
 
     async function fetchBalance(){
-      if (!uid) { balEl.textContent = '⚠️ Missing user id (uid).'; return; }
+      if (!uid) { balEl.textContent = 'Sign in on the home page, then return to see your balance.'; return; }
       try {
         const r = await fetch('/api/wallet/get', {
           method:'GET',

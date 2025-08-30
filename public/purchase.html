@@ -395,9 +395,7 @@ function updateFromChosen() {
 function estimate() {
   const rec = selectedRecord();
   const qtyEl = $('qty');
-  const urlEl = $('url');
   const qty = Number(qtyEl.value || 0);
-  const pricePerUnitCents = rec ? Math.round(rec.rate * 100 / 1000) : 0;
 
   let invalid = false;
   if (rec) {
@@ -409,10 +407,14 @@ function estimate() {
   }
 
   qtyEl.classList.toggle('invalid', invalid);
+
+  // Compute total USD directly to avoid per-unit rounding to 0
+  const totalUsd = (!invalid && rec) ? (rec.rate * qty) / 1000 : 0;
+
   if (invalid) {
     $('est').value = '—';
   } else {
-    $('est').value = cents(pricePerUnitCents * qty);
+    $('est').value = `$${totalUsd.toFixed(2)}`;
   }
   updateCreateButtonState();
 }
@@ -465,6 +467,11 @@ $('qty').addEventListener('input', estimate);
 $('url').addEventListener('input', updateCreateButtonState);
 
 $('create').onclick = async () => {
+  if ($('qty').classList.contains('invalid')) {
+    $('msg').className = 'err';
+    $('msg').textContent = '❌ Quantity is outside allowed min/max.';
+    return;
+  }
   $('msg').className = 'muted';
   $('msg').textContent = 'Resolving service...';
   {
@@ -510,7 +517,7 @@ $('create').onclick = async () => {
   let picked = null;
 
   // 1) Direct index
-  if (qp.idx && catalog[Number(qp.idx)]) picked = catalog[Number(qp.idx)];
+  if (qp.idx !== undefined && qp.idx !== null && qp.idx !== '' && catalog[Number(qp.idx)]) picked = catalog[Number(qp.idx)];
 
   // 2) Slug/name lookup in CSV
   if (!picked && qp.slug) picked = byName.get(String(qp.slug).toLowerCase()) || byName.get(String(qp.slug));

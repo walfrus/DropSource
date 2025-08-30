@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Deposit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#0f1726; --panel-2:#0c1422; --border:#1d2a3c; --border-2:#2a3951;
+      --text:#d9e2f1; --muted:#8aa0bd; --ok:#39d98a; --err:#ff6b6b; --accent:#4b6bfb;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,Noto Sans;
+         background:var(--bg); color:var(--text); margin:0; padding:24px 16px 48px;}
+    .wrap{max-width:980px;margin:0 auto}
+    h1{margin:0 0 16px; font-size:22px; font-weight:700; letter-spacing:.2px}
+    .card{position:relative;background:radial-gradient(120% 120% at 0% 0%,rgba(255,255,255,.04),transparent 50%),var(--panel);
+      border:1px solid var(--border); border-radius:14px; padding:16px; margin:16px 0;
+      box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02);}
+    .card::after{content:""; position:absolute; left:-1px; right:-1px; top:-1px; height:2px; border-radius:14px;
+      filter:blur(.15px); background:linear-gradient(90deg,#4b6bfb,#6a5af9,#d66efd,#22d3ee);}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+    .muted{color:var(--muted)} .ok{color:var(--ok)} .err{color:var(--err)}
+    .pill{display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px;
+      border:1px solid rgba(255,215,0,.30);
+      background:linear-gradient(90deg,#fff1a6,#ffd76b,#ffbf36,#ffd76b,#fff1a6);
+      color:#1a1400; font-weight:800; letter-spacing:.2px;
+      box-shadow:0 0 0 1px rgba(255,215,0,.15) inset, 0 2px 8px rgba(0,0,0,.25), 0 0 16px rgba(255,215,0,.08);}
+    .grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px}
+    .amount{
+      cursor:pointer; user-select:none; text-align:center; padding:14px 10px; border-radius:12px;
+      border:1px solid var(--border); background:var(--panel-2); font-weight:700;
+      transition:.15s border-color,.15s box-shadow,.15s transform;
+    }
+    .amount:hover{border-color:var(--border-2); box-shadow:0 0 0 3px rgba(75,107,251,.15); transform:translateY(-1px)}
+    .amount.active{border-color:#ffd76b; box-shadow:0 0 0 3px rgba(255,215,0,.22)}
+    button{
+      width:100%; padding:12px; border-radius:10px; cursor:pointer; border:1px solid var(--border);
+      background:#0e1626; color:var(--text); transition:.15s border-color,.15s background
+    }
+    button:hover{border-color:var(--border-2); background:#0f1a2c}
+    .payrow{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px}
+    @media (max-width:720px){ .grid{grid-template-columns:repeat(2,minmax(0,1fr))} .payrow{grid-template-columns:1fr} }
+  </style>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    // Supabase client (same project as the rest of your site)
+    const SUPABASE_URL  = 'https://oyibixfoiwizpphuimkl.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }});
+
+    const KEY='ds_user';
+    const $=(id)=>document.getElementById(id);
+    const BASE=location.origin;
+
+    function loadUser(){
+      try{ return JSON.parse(localStorage.getItem(KEY)||'{}'); }catch{ return {}; }
+    }
+    function cents(n){ return `$${(n/100).toFixed(2)}`; }
+
+    async function api(url,opts={}){
+      const u = loadUser(); const headers=Object.assign({'content-type':'application/json'},{'x-user-id':u.uid||'','x-user-email':u.email||''},opts.headers||{});
+      const r = await fetch(url,Object.assign({method:'GET',headers},opts));
+      const t=await r.text(); let j=null; try{ j=JSON.parse(t);}catch{}; return {ok:r.ok,status:r.status,json:j,text:t};
+    }
+    async function refreshBalance(){
+      const u=loadUser();
+      if(!u.uid||!u.email){ $('ubox').innerHTML = 'Signed out — <span class="muted">click Deposit after signing in on the home page</span>'; return; }
+      $('ubox').textContent = `UID ${u.uid.slice(0,8)}…  ·  ${u.email}`;
+      const r = await api(`${BASE}/api/wallet/get`);
+      const balCents = (r.ok && r.json && typeof r.json.balance_cents === 'number') ? r.json.balance_cents : 0;
+      $('bal').textContent = cents(balCents);
+    }
+
+    let amount = 500; // cents
+    function pick(v){ amount=v; document.querySelectorAll('.amount').forEach(x=>x.classList.toggle('active', Number(x.dataset.cents)===v)); }
+
+    async function start(provider){
+      const u=loadUser();
+      if(!u.uid||!u.email){ alert('Please sign in on the home page first.'); return; }
+      const success = `${BASE}/balance.html?src=${provider}&uid=${encodeURIComponent(u.uid)}`;
+      const cancel  = `${BASE}/deposit.html?canceled=1`;
+      const body = JSON.stringify({ amount_cents: amount, uid: u.uid, email: u.email, success_url: success, cancel_url: cancel });
+
+      const endpoint = provider === 'square'
+        ? '/api/deposits/create-square'
+        : '/api/deposits/create-coinbase';
+      const r = await api(endpoint, { method:'POST', body });
+      const nextUrl = r.json && (r.json.checkout_url || r.json.hosted_url || r.json.url);
+      if (r.ok && nextUrl) {
+        location.href = nextUrl;
+      } else {
+        console.error(r.text || r.json);
+        alert('Could not start checkout.');
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', async ()=>{
+      document.querySelectorAll('.amount').forEach(x=> x.addEventListener('click', ()=> pick(Number(x.dataset.cents))));
+      pick(500); // default $5
+      await refreshBalance();
+    });
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Deposit</h1>
+
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+        <span id="bal" class="pill">$0.00</span>
+        <span id="ubox" class="muted">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted" style="margin-bottom:10px">Choose amount</div>
+      <div class="grid">
+        <div class="amount" data-cents="500">$5</div>
+        <div class="amount" data-cents="1000">$10</div>
+        <div class="amount" data-cents="2500">$25</div>
+        <div class="amount" data-cents="5000">$50</div>
+      </div>
+
+      <div class="muted" style="margin:16px 0 8px">Pay with</div>
+      <div class="payrow">
+        <button onclick="start('square')">💳 Card (Square)</button>
+        <button onclick="start('coinbase')">🪙 Crypto (Coinbase)</button>
+      </div>
+
+      <p class="muted" style="margin-top:12px">
+        After payment you’ll be redirected to the Balance page. Funds are credited automatically via webhook.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
