@@ -161,10 +161,17 @@
         return;
       }
 
-      msg.textContent = 'Creating checkout…';
+      msg.textContent = '';
 
       try {
-        const r = await fetch(`/api/create-${provider}`, {
+        const endpoint =
+          provider === 'square'
+            ? '/api/deposits/create-square'
+            : provider === 'coinbase'
+            ? '/api/deposits/create-coinbase'
+            : `/api/deposits/create-${provider}`;
+
+        const r = await fetch(endpoint, {
           method:'POST',
           headers:{
             'content-type':'application/json',
@@ -178,15 +185,19 @@
           })
         });
 
-        const data = await r.json().catch(()=> ({}));
-        if (!r.ok) throw new Error((data && (data.error||data.message)) || 'Checkout failed');
+        let data = {};
+        try { data = await r.json(); } catch {}
+        if (!r.ok) {
+          const serverMsg = (data && (data.error || data.message)) || '';
+          throw new Error(serverMsg || `HTTP ${r.status}`);
+        }
 
         const url = data.url || data.checkout_url || data.hosted_url;
         if (!url) throw new Error('No checkout URL returned');
         location.href = url;
       } catch (err){
         console.error(err);
-        msg.textContent = '⚠️ ' + (err.message || 'Could not start checkout');
+        msg.textContent = '⚠️ Checkout failed: ' + (err.message || 'Could not start checkout');
       }
     }
 
