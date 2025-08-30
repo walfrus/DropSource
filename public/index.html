@@ -8,9 +8,10 @@
     :root{--bg:#0b0f16;--fg:#e6edf7;--muted:#9fb3c8;--chip:#1a2230;--brand:#8aa6ff;--card:#0f1520;--line:#1b2434;--btn:#1b2a45;--btn-fg:#e6edf7}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,Segoe UI,Helvetica,Arial,sans-serif}
     header{position:sticky;top:0;background:#0d1421;border-bottom:1px solid var(--line);padding:10px 12px;z-index:5}
-    header > .row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;max-width:1200px;margin:0 auto}
+    header &gt; .row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;max-width:1200px;margin:0 auto}
 #midbar{justify-self:center;gap:8px}
 #authbar{justify-self:end;gap:8px}
+#brandbar{justify-self:start}
 .card.cat h3 > span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .brand{color:var(--brand);font-weight:800}
     #toolbar{display:flex;gap:8px;max-width:1200px;margin:12px auto 0}
