@@ -239,16 +239,19 @@ details[open] summary{opacity:.9}
         // Optional local dev fallback (kept for localhost only)
         const SUPABASE_URL = __envUrl || (__isLocal ? 'https://oyibixfoiwizpphuimkl.supabase.co' : '');
         const SUPABASE_ANON_KEY = __envKey || (__isLocal ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg' : '');
-        const sb = window.supabase
-          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-              auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                flowType: 'pkce',
-                detectSessionInUrl: true
-              }
-            })
-          : null;
+        let sb = null;
+        if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
+          sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+              persistSession: true,
+              autoRefreshToken: true,
+              flowType: 'pkce',
+              detectSessionInUrl: true
+            }
+          });
+        } else {
+          console.warn('Supabase URL/key missing; auth disabled on this page.');
+        }
         if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
           console.warn('Supabase URL/key missing. Set <meta name="supabase-url"> and <meta name="supabase-key"> or window.SUPABASE_URL/window.SUPABASE_ANON_KEY.');
         }
