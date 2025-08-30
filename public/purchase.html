@@ -111,7 +111,23 @@
     (function(){
       const SUPABASE_URL = window.SUPABASE_URL || 'https://oyibixfoiwizpphuimkl.supabase.co';
       const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aWJpeGZvaXdpenBwaHVpbWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwOTMzNTAsImV4cCI6MjA3MTY2OTM1MH0.MddtDHuzo9PPGJaZWG9Ny0UAuUIYUKzT2Q27OpK66Rg';
-      const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+      const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      }) : null;
+
+      ;(async function recoverFromOAuthHash(){
+        try{
+          if (location.hash.includes('access_token=') && location.hash.includes('refresh_token=')) {
+            const params = new URLSearchParams(location.hash.slice(1));
+            const access_token  = params.get('access_token');
+            const refresh_token = params.get('refresh_token');
+            if (access_token && refresh_token) {
+              await sb.auth.setSession({ access_token, refresh_token });
+              history.replaceState({}, '', location.pathname + location.search + '#/');
+            }
+          }
+        }catch(e){ console.warn('OAuth hash recovery failed:', e); }
+      })();
 
       const $ = (s)=>document.querySelector(s);
       const elCat  = $('#fieldCat');
@@ -183,18 +199,20 @@
         if(!sb) return;
         const { data:{ session } } = await sb.auth.getSession();
         const user = session?.user;
+        $('#userId').value = user?.id || '';
+        $('#userEmail').value = user?.email || '';
         elLogin.style.display  = user ? 'none' : '';
         elLogout.style.display = user ? '' : 'none';
         elBalWrap.style.display = user ? 'inline-flex' : 'none';
         if (user){
-          elUserId.value = user.id;
-          elUserEmail.value = user.email || '';
           elProvider.textContent = (user.app_metadata?.provider || '—');
           await refreshBalance();
+        } else {
+          elProvider.textContent = '—';
         }
       }
       refreshAuthUI();
-      if (sb) sb.auth.onAuthStateChange(refreshAuthUI);
+      if (sb) sb.auth.onAuthStateChange(()=>refreshAuthUI());
       if (elLogin) elLogin.onclick = async ()=>{
         if(!sb) return;
         const { data } = await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.href } });
