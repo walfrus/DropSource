@@ -12,6 +12,17 @@
     .balance { margin-top:1rem; font-size:1.2rem; }
     button { background:#11131a; border:1px solid #24262c; color:#e8ecf1; padding:.5rem .75rem; border-radius:10px; cursor:pointer }
     button:hover { border-color:#59a0ff; }
+    .pillbar { display:flex; gap:.5rem; flex-wrap:wrap; margin:.5rem 0 0; }
+    .pillbar button { background:#141722; border:1px solid #2a2e3a; border-radius:999px; padding:.35rem .75rem; font-weight:600; }
+    .pillbar button:hover { border-color:#59a0ff; }
+    .providers { display:flex; gap:.5rem; margin-top:.5rem; flex-wrap:wrap; }
+    .providers button { background:#ffd85a; color:#111; border:1px solid #e3b900; border-radius:10px; padding:.5rem .75rem; font-weight:700; }
+    .providers button.secondary { background:#2ee4b6; border-color:#10c59b; color:#072319; }
+    .field { display:flex; align-items:center; gap:.5rem; margin-top:.5rem; }
+    .field input { background:#11131a; border:1px solid #24262c; color:#e8ecf1; padding:.5rem .75rem; border-radius:10px; min-width:10rem; }
+    .field input:focus { outline:none; border-color:#59a0ff; }
+    .note { margin-top:.25rem; color:#a6acb3; font-size:.9rem; }
+    .divider { height:1px; background:#1b1f29; border:none; margin:1rem 0; }
   </style>
 </head>
 <body>
@@ -22,6 +33,28 @@
     <button id="refresh">Refresh balance</button>
   </div>
   <div class="balance" id="balance"></div>
+
+  <hr class="divider"/>
+
+  <h2>Add funds</h2>
+  <div id="addFunds">
+    <div class="field">
+      <label for="amt"><span class="muted">Amount (USD)</span></label>
+      <input id="amt" type="number" step="1" min="1" placeholder="20" inputmode="numeric"/>
+    </div>
+    <div class="pillbar">
+      <button type="button" data-amt="1">+$1</button>
+      <button type="button" data-amt="10">+$10</button>
+      <button type="button" data-amt="20">+$20</button>
+      <button type="button" data-amt="50">+$50</button>
+      <button type="button" data-amt="100">+$100</button>
+    </div>
+    <div class="providers">
+      <button id="pay-square" type="button">Pay with Card (Square)</button>
+      <button id="pay-coinbase" class="secondary" type="button">Pay with Crypto (Coinbase)</button>
+    </div>
+    <div id="msg" class="note"></div>
+  </div>
 
   <script>
     // ——— helpers ———
@@ -94,6 +127,87 @@
         balEl.textContent = '⚠️ Could not load balance';
       }
     }
+
+    // ——— deposit helpers ———
+    function dollarsToCents(v){
+      const n = Math.max(0, Number(v||0));
+      return Math.round(n * 100);
+    }
+
+    function successUrl(){
+      const base = location.origin + '/balance.html';
+      const q = new URLSearchParams();
+      if (uid) q.set('uid', uid);
+      if (email) q.set('email', email);
+      q.set('ok', '1');
+      return base + '?' + q.toString();
+    }
+    function cancelUrl(){
+      const base = location.origin + '/balance.html';
+      const q = new URLSearchParams();
+      if (uid) q.set('uid', uid);
+      if (email) q.set('email', email);
+      q.set('canceled', '1');
+      return base + '?' + q.toString();
+    }
+
+    async function createCheckout(provider, amountDollars){
+      const msg = document.getElementById('msg');
+      if (!uid) { msg.textContent = 'Please sign in on the home page first.'; return; }
+
+      const cents = dollarsToCents(amountDollars);
+      if (!cents || cents < 100) { // $1 min guard
+        msg.textContent = 'Enter at least $1 to continue.';
+        return;
+      }
+
+      msg.textContent = 'Creating checkout…';
+
+      try {
+        const r = await fetch(`/api/create-${provider}`, {
+          method:'POST',
+          headers:{
+            'content-type':'application/json',
+            'x-user-id': uid,
+            'x-user-email': email || ''
+          },
+          body: JSON.stringify({
+            amount_cents: cents,
+            success_url: successUrl(),
+            cancel_url: cancelUrl()
+          })
+        });
+
+        const data = await r.json().catch(()=> ({}));
+        if (!r.ok) throw new Error((data && (data.error||data.message)) || 'Checkout failed');
+
+        const url = data.url || data.checkout_url || data.hosted_url;
+        if (!url) throw new Error('No checkout URL returned');
+        location.href = url;
+      } catch (err){
+        console.error(err);
+        msg.textContent = '⚠️ ' + (err.message || 'Could not start checkout');
+      }
+    }
+
+    // quick amount chips
+    document.querySelectorAll('.pillbar [data-amt]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = btn.getAttribute('data-amt');
+        const inp = document.getElementById('amt');
+        inp.value = v;
+      });
+    });
+
+    // provider buttons
+    document.getElementById('pay-square').addEventListener('click', () => {
+      const amt = (document.getElementById('amt').value || '0').trim();
+      createCheckout('square', amt);
+    });
+    document.getElementById('pay-coinbase').addEventListener('click', () => {
+      const amt = (document.getElementById('amt').value || '0').trim();
+      createCheckout('coinbase', amt);
+    });
 
     // manual refresh button
     document.getElementById('refresh').addEventListener('click', fetchBalance);
